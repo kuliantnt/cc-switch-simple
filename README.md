@@ -27,6 +27,7 @@
 
 - `cc-switch`：主命令行脚本
 - `install.sh`：安装脚本，会把命令安装到 `~/.local/bin/cc-switch`
+- `completions/_cc-switch`：`zsh` 补全脚本
 - `profiles/`：示例 profile 配置文件
 
 ## 安装
@@ -38,11 +39,27 @@ chmod +x cc-switch install.sh
 ./install.sh
 ```
 
+卸载时执行：
+
+```bash
+./install.sh uninstall
+```
+
 如果 `~/.local/bin` 还不在 `PATH` 中，把下面这行加入你的 shell 配置：
 
 ```bash
 export PATH="$HOME/.local/bin:$PATH"
 ```
+
+如果你使用 `zsh`，安装脚本还会把补全文件安装到 `~/.local/share/zsh/site-functions/_cc-switch`。
+若补全还没有生效，把下面这行加入 `~/.zshrc`，并确保它出现在 `compinit` 之前：
+
+```bash
+fpath=("$HOME/.local/share/zsh/site-functions" $fpath)
+```
+
+`./install.sh uninstall` 会删除已安装的命令和 `zsh` 补全，并删除仓库自带且未被修改过的示例 profile。
+为避免误删用户数据，它不会删除 `~/.claude/settings.json`、备份文件，也不会删除你改过的 profile。
 
 ## 命令
 
@@ -57,6 +74,7 @@ cc-switch use deepseek
 ```
 
 校验 `deepseek.json` 的 JSON 格式，备份当前 `settings.json`，然后切换到该 profile。
+在 `zsh` 下输入 `cc-switch use deep` 后按 `Tab`，会从 `~/.claude/profiles/*.json` 中补全出 `deepseek`。
 
 ```bash
 cc-switch current
@@ -87,6 +105,7 @@ cc-switch restore settings-20260518-142604.json
 ```
 
 把指定备份文件恢复为当前 `settings.json`。如果当前已有配置，会先自动再备份一次。
+在 `zsh` 下输入 `cc-switch restore set` 后按 `Tab`，会补全 `~/.claude/backups/` 里的备份文件名。
 
 ```bash
 cc-switch help
