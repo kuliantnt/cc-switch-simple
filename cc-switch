@@ -1,0 +1,273 @@
+#!/usr/bin/env bash
+
+set -euo pipefail
+
+CLAUDE_DIR="${HOME}/.claude"
+PROFILES_DIR="${CLAUDE_DIR}/profiles"
+BACKUPS_DIR="${CLAUDE_DIR}/backups"
+SETTINGS_FILE="${CLAUDE_DIR}/settings.json"
+
+timestamp() {
+  date +"%Y%m%d-%H%M%S"
+}
+
+die() {
+  printf 'Error: %s\n' "$*" >&2
+  exit 1
+}
+
+has_command() {
+  command -v "$1" >/dev/null 2>&1
+}
+
+ensure_dirs() {
+  mkdir -p "$PROFILES_DIR" "$BACKUPS_DIR"
+}
+
+profile_path() {
+  local name="${1:-}"
+  printf '%s/%s.json' "$PROFILES_DIR" "$name"
+}
+
+json_validator() {
+  if has_command jq; then
+    printf 'jq'
+    return
+  fi
+
+  if has_command python3; then
+    printf 'python3'
+    return
+  fi
+
+  die "jq or python3 is required to validate JSON."
+}
+
+validate_json() {
+  local file="$1"
+  local validator
+  validator="$(json_validator)"
+
+  if [[ ! -f "$file" ]]; then
+    die "JSON file not found: $file"
+  fi
+
+  if [[ "$validator" == "jq" ]]; then
+    jq empty "$file" >/dev/null 2>&1 || die "Invalid JSON: $file"
+    return
+  fi
+
+  python3 -m json.tool "$file" >/dev/null 2>&1 || die "Invalid JSON: $file"
+}
+
+normalize_json() {
+  local file="$1"
+  local validator
+  validator="$(json_validator)"
+
+  if [[ "$validator" == "jq" ]]; then
+    jq -S -c . "$file"
+    return
+  fi
+
+  python3 - "$file" <<'PY'
+import json
+import sys
+
+with open(sys.argv[1], "r", encoding="utf-8") as fh:
+    data = json.load(fh)
+
+print(json.dumps(data, sort_keys=True, separators=(",", ":")))
+PY
+}
+
+backup_current() {
+  ensure_dirs
+
+  if [[ ! -f "$SETTINGS_FILE" ]]; then
+    printf 'No current settings to back up.\n'
+    return 0
+  fi
+
+  validate_json "$SETTINGS_FILE"
+  local backup_file="${BACKUPS_DIR}/settings-$(timestamp).json"
+  cp "$SETTINGS_FILE" "$backup_file"
+  printf 'Backed up current settings to: %s\n' "$backup_file"
+}
+
+list_profiles() {
+  ensure_dirs
+
+  local found=0
+  local file
+  for file in "$PROFILES_DIR"/*.json; do
+    if [[ -e "$file" ]]; then
+      found=1
+      basename "$file" .json
+    fi
+  done
+
+  if [[ "$found" -eq 0 ]]; then
+    printf 'No profiles found in %s\n' "$PROFILES_DIR"
+  fi
+}
+
+detect_current_profile() {
+  local current_normalized="$1"
+  local file
+  local profile_normalized
+
+  for file in "$PROFILES_DIR"/*.json; do
+    [[ -e "$file" ]] || continue
+
+    if ! validate_json "$file" >/dev/null 2>&1; then
+      continue
+    fi
+
+    profile_normalized="$(normalize_json "$file")"
+    if [[ "$current_normalized" == "$profile_normalized" ]]; then
+      basename "$file" .json
+      return 0
+    fi
+  done
+
+  return 1
+}
+
+show_current() {
+  ensure_dirs
+
+  if [[ ! -f "$SETTINGS_FILE" ]]; then
+    die "Current settings not found: $SETTINGS_FILE"
+  fi
+
+  validate_json "$SETTINGS_FILE"
+
+  local current_name=""
+  local current_normalized
+  current_normalized="$(normalize_json "$SETTINGS_FILE")"
+
+  if current_name="$(detect_current_profile "$current_normalized")"; then
+    printf 'Current profile: %s\n' "$current_name"
+  else
+    printf 'Current profile: unknown\n'
+  fi
+
+  printf 'Settings file: %s\n' "$SETTINGS_FILE"
+  printf '\n'
+
+  if has_command jq; then
+    jq . "$SETTINGS_FILE"
+  else
+    python3 -m json.tool "$SETTINGS_FILE"
+  fi
+}
+
+use_profile() {
+  local name="${1:-}"
+  [[ -n "$name" ]] || die "Usage: cc-switch use <profile>"
+
+  ensure_dirs
+  local source_file
+  source_file="$(profile_path "$name")"
+
+  [[ -f "$source_file" ]] || die "Profile not found: $source_file"
+  validate_json "$source_file"
+
+  if [[ -f "$SETTINGS_FILE" ]]; then
+    backup_current
+  else
+    printf 'Initializing new settings file.\n'
+  fi
+
+  cp "$source_file" "$SETTINGS_FILE"
+  printf 'Switched to profile: %s\n' "$name"
+  printf 'Updated: %s\n' "$SETTINGS_FILE"
+}
+
+edit_profile() {
+  local name="${1:-}"
+  [[ -n "$name" ]] || die "Usage: cc-switch edit <profile>"
+
+  ensure_dirs
+  local file
+  file="$(profile_path "$name")"
+  [[ -f "$file" ]] || die "Profile not found: $file"
+
+  local editor="${EDITOR:-nano}"
+  "$editor" "$file"
+}
+
+new_profile() {
+  local name="${1:-}"
+  [[ -n "$name" ]] || die "Usage: cc-switch new <profile>"
+
+  ensure_dirs
+
+  if [[ ! -f "$SETTINGS_FILE" ]]; then
+    die "Current settings not found: $SETTINGS_FILE"
+  fi
+
+  validate_json "$SETTINGS_FILE"
+
+  local file
+  file="$(profile_path "$name")"
+
+  if [[ -e "$file" ]]; then
+    die "Profile already exists: $file"
+  fi
+
+  cp "$SETTINGS_FILE" "$file"
+  printf 'Created profile: %s\n' "$file"
+}
+
+usage() {
+  cat <<'EOF'
+Usage:
+  cc-switch list
+  cc-switch use <profile>
+  cc-switch current
+  cc-switch backup
+  cc-switch edit <profile>
+  cc-switch new <profile>
+
+Examples:
+  cc-switch list
+  cc-switch use deepseek
+  cc-switch current
+EOF
+}
+
+main() {
+  local command="${1:-help}"
+
+  case "$command" in
+    list)
+      list_profiles
+      ;;
+    use)
+      use_profile "${2:-}"
+      ;;
+    current)
+      show_current
+      ;;
+    backup)
+      backup_current
+      ;;
+    edit)
+      edit_profile "${2:-}"
+      ;;
+    new)
+      new_profile "${2:-}"
+      ;;
+    help|-h|--help)
+      usage
+      ;;
+    *)
+      usage
+      die "Unknown command: $command"
+      ;;
+  esac
+}
+
+main "$@"
