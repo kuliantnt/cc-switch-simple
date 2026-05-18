@@ -28,6 +28,7 @@ ensure_dirs() {
 validate_profile_name() {
   local name="$1"
   [[ "$name" =~ ^[A-Za-z0-9._-]+$ ]] || die "Invalid profile name: $name"
+  [[ "$name" != .* ]] || die "Invalid profile name: $name"
 }
 
 profile_path() {
@@ -83,11 +84,11 @@ normalize_json() {
   validator="$(json_validator)"
 
   if [[ "$validator" == "jq" ]]; then
-    jq -S -c . "$file" 2>/dev/null
+    jq -S -c . "$file"
     return
   fi
 
-  python3 - "$file" 2>/dev/null <<'PY'
+  python3 - "$file" <<'PY'
 import json
 import sys
 
@@ -98,10 +99,94 @@ print(json.dumps(data, sort_keys=True, separators=(",", ":")))
 PY
 }
 
+write_settings_atomically() {
+  local source_file="$1"
+  local target_file="$2"
+  local tmp_file=""
+
+  tmp_file="$(mktemp -p "$CLAUDE_DIR" settings.XXXXXX)"
+  trap '[[ -n "${tmp_file:-}" && -e "$tmp_file" ]] && rm -f -- "$tmp_file"' RETURN
+
+  cp "$source_file" "$tmp_file"
+  chmod 600 "$tmp_file"
+  mv -f "$tmp_file" "$target_file"
+
+  trap - RETURN
+}
+
+show_settings_file() {
+  local file="$1"
+  local show_token="${2:-false}"
+
+  if has_command jq; then
+    if [[ "$show_token" == "true" ]]; then
+      jq . "$file"
+      return
+    fi
+
+    jq '
+      if (.env? | type) == "object" and .env.ANTHROPIC_AUTH_TOKEN? != null then
+        .env.ANTHROPIC_AUTH_TOKEN |= (
+          if type != "string" or . == "" then
+            .
+          elif length > 10 then
+            .[0:6] + "***" + .[-4:]
+          else
+            .[0:1] + "***"
+          end
+        )
+      else
+        .
+      end
+    ' "$file"
+    return
+  fi
+
+  python3 - "$file" "$show_token" <<'PY'
+import json
+import sys
+
+with open(sys.argv[1], "r", encoding="utf-8") as fh:
+    data = json.load(fh)
+
+if sys.argv[2] != "true":
+    env = data.get("env")
+    if isinstance(env, dict):
+        token = env.get("ANTHROPIC_AUTH_TOKEN")
+        if isinstance(token, str) and token:
+            if len(token) > 10:
+                env["ANTHROPIC_AUTH_TOKEN"] = token[:6] + "***" + token[-4:]
+            else:
+                env["ANTHROPIC_AUTH_TOKEN"] = token[:1] + "***"
+
+print(json.dumps(data, indent=2, ensure_ascii=False))
+PY
+}
+
+warn_invalid_json() {
+  local file="$1"
+  local validator=""
+  local err=""
+
+  validator="$(json_validator)"
+
+  if [[ "$validator" == "jq" ]]; then
+    err="$(jq empty "$file" 2>&1 >/dev/null)" && return 0
+  else
+    err="$(python3 -m json.tool "$file" 2>&1 >/dev/null)" && return 0
+  fi
+
+  printf 'Warning: %s contains invalid JSON.\n' "$file" >&2
+  [[ -n "$err" ]] && printf '%s\n' "$err" >&2
+  return 0
+}
+
 cleanup_old_backups() {
   local -a backups=()
   local remove_count=0
   local i=0
+
+  (( BACKUP_KEEP_COUNT >= 1 )) || return 0
 
   shopt -s nullglob
   backups=("$BACKUPS_DIR"/settings-*.json)
@@ -187,6 +272,21 @@ detect_current_profile() {
 }
 
 show_current() {
+  local show_token="false"
+
+  (( $# <= 1 )) || die "Usage: cc-switch current [--show-token]"
+
+  case "${1:-}" in
+    "")
+      ;;
+    --show-token)
+      show_token="true"
+      ;;
+    *)
+      die "Usage: cc-switch current [--show-token]"
+      ;;
+  esac
+
   ensure_dirs
 
   if [[ ! -f "$SETTINGS_FILE" ]]; then
@@ -209,11 +309,7 @@ show_current() {
   printf 'Settings file: %s\n' "$SETTINGS_FILE"
   printf '\n'
 
-  if has_command jq; then
-    jq . "$SETTINGS_FILE"
-  else
-    python3 -m json.tool "$SETTINGS_FILE"
-  fi
+  show_settings_file "$SETTINGS_FILE" "$show_token"
 }
 
 warn_placeholder_token() {
@@ -238,9 +334,11 @@ PY
 )"
   fi
 
-  if [[ "$token" == "sk-填这里" ]]; then
-    printf 'Warning: %s still contains a placeholder token.\n' "$file" >&2
-  fi
+  case "$token" in
+    sk-填这里|sk-xxx*|your-*|REPLACE_ME)
+      printf 'Warning: %s still contains a placeholder token.\n' "$file" >&2
+      ;;
+  esac
 }
 
 use_profile() {
@@ -257,12 +355,19 @@ use_profile() {
   warn_placeholder_token "$source_file"
 
   if [[ -f "$SETTINGS_FILE" ]]; then
+    validate_json "$SETTINGS_FILE"
+
+    if [[ "$(normalize_json "$source_file")" == "$(normalize_json "$SETTINGS_FILE")" ]]; then
+      printf 'Already on profile: %s\n' "$name"
+      return 0
+    fi
+
     backup_current
   else
     printf 'Initializing new settings file.\n'
   fi
 
-  cp "$source_file" "$SETTINGS_FILE"
+  write_settings_atomically "$source_file" "$SETTINGS_FILE"
   printf 'Switched to profile: %s\n' "$name"
   printf 'Updated: %s\n' "$SETTINGS_FILE"
 }
@@ -279,6 +384,7 @@ edit_profile() {
 
   local editor="${EDITOR:-nano}"
   "$editor" "$file"
+  warn_invalid_json "$file"
 }
 
 new_profile() {
@@ -322,7 +428,7 @@ restore_backup() {
     printf 'Initializing new settings file.\n'
   fi
 
-  cp "$source_file" "$SETTINGS_FILE"
+  write_settings_atomically "$source_file" "$SETTINGS_FILE"
   printf 'Restored backup: %s\n' "$source_file"
   printf 'Updated: %s\n' "$SETTINGS_FILE"
 }
@@ -332,7 +438,7 @@ usage() {
 Usage:
   cc-switch list
   cc-switch use <profile>
-  cc-switch current
+  cc-switch current [--show-token]
   cc-switch backup
   cc-switch edit <profile>
   cc-switch new <profile>
@@ -342,34 +448,40 @@ Examples:
   cc-switch list
   cc-switch use deepseek
   cc-switch current
+  cc-switch current --show-token
   cc-switch restore settings-20260518-142604.json
 EOF
 }
 
 main() {
   local command="${1:-help}"
+  shift || true
 
   case "$command" in
     list)
       list_profiles
       ;;
     use)
-      use_profile "${2:-}"
+      (( $# <= 1 )) || die "Usage: cc-switch use <profile>"
+      use_profile "${1:-}"
       ;;
     current)
-      show_current
+      show_current "$@"
       ;;
     backup)
       backup_current
       ;;
     edit)
-      edit_profile "${2:-}"
+      (( $# <= 1 )) || die "Usage: cc-switch edit <profile>"
+      edit_profile "${1:-}"
       ;;
     new)
-      new_profile "${2:-}"
+      (( $# <= 1 )) || die "Usage: cc-switch new <profile>"
+      new_profile "${1:-}"
       ;;
     restore)
-      restore_backup "${2:-}"
+      (( $# <= 1 )) || die "Usage: cc-switch restore <backup-file>"
+      restore_backup "${1:-}"
       ;;
     help|-h|--help)
       usage

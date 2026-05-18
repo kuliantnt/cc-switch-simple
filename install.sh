@@ -19,14 +19,20 @@ Usage:
   ./install.sh uninstall
 
 Notes:
-  - install: install command, zsh completion, and bundled sample profiles
-  - uninstall: remove installed command/completion and remove only unmodified bundled sample profiles
+  - install: install command, zsh completion, and bundled profile templates
+  - uninstall: remove installed command/completion and remove only unmodified profiles created from bundled templates
 EOF
 }
 
 install_profile_if_missing() {
   local source_file="$1"
-  local target_file="${PROFILES_DIR}/$(basename "$source_file")"
+  local source_name=""
+  local target_name=""
+  local target_file=""
+
+  source_name="$(basename "$source_file")"
+  target_name="${source_name%.template.json}.json"
+  target_file="${PROFILES_DIR}/${target_name}"
 
   if [[ -e "$target_file" ]]; then
     printf 'Skip existing profile: %s\n' "$target_file"
@@ -52,16 +58,22 @@ remove_file_if_exists() {
 
 remove_sample_profile_if_unmodified() {
   local source_file="$1"
-  local target_file="${PROFILES_DIR}/$(basename "$source_file")"
+  local source_name=""
+  local target_name=""
+  local target_file=""
+
+  source_name="$(basename "$source_file")"
+  target_name="${source_name%.template.json}.json"
+  target_file="${PROFILES_DIR}/${target_name}"
 
   if [[ ! -e "$target_file" ]]; then
-    printf 'Skip missing sample profile: %s\n' "$target_file"
+    printf 'Skip missing template profile: %s\n' "$target_file"
     return
   fi
 
   if cmp -s "$source_file" "$target_file"; then
     rm -f -- "$target_file"
-    printf 'Removed sample profile: %s\n' "$target_file"
+    printf 'Removed template profile: %s\n' "$target_file"
     return
   fi
 
@@ -90,7 +102,7 @@ install_main() {
   printf 'Installed zsh completion: %s\n' "$TARGET_ZSH_COMPLETION"
 
   shopt -s nullglob
-  profile_files=("${SCRIPT_DIR}/profiles/"*.json)
+  profile_files=("${SCRIPT_DIR}/profiles/"*.template.json)
   shopt -u nullglob
 
   for profile_file in "${profile_files[@]}"; do
@@ -125,7 +137,7 @@ uninstall_main() {
   remove_file_if_exists "$TARGET_ZSH_COMPLETION" "zsh completion"
 
   shopt -s nullglob
-  profile_files=("${SCRIPT_DIR}/profiles/"*.json)
+  profile_files=("${SCRIPT_DIR}/profiles/"*.template.json)
   shopt -u nullglob
 
   for profile_file in "${profile_files[@]}"; do

@@ -28,7 +28,7 @@
 - `cc-switch`：主命令行脚本
 - `install.sh`：安装脚本，会把命令安装到 `~/.local/bin/cc-switch`
 - `completions/_cc-switch`：`zsh` 补全脚本
-- `profiles/`：示例 profile 配置文件
+- `profiles/`：仓库自带模板和你本地自用的 profile 目录
 
 ## 安装
 
@@ -58,7 +58,7 @@ export PATH="$HOME/.local/bin:$PATH"
 fpath=("$HOME/.local/share/zsh/site-functions" $fpath)
 ```
 
-`./install.sh uninstall` 会删除已安装的命令和 `zsh` 补全，并删除仓库自带且未被修改过的示例 profile。
+`./install.sh uninstall` 会删除已安装的命令和 `zsh` 补全，并删除仓库自带且未被修改过的模板生成 profile。
 为避免误删用户数据，它不会删除 `~/.claude/settings.json`、备份文件，也不会删除你改过的 profile。
 
 ## 命令
@@ -80,7 +80,7 @@ cc-switch use deepseek
 cc-switch current
 ```
 
-打印当前 `settings.json` 内容，并尽量识别它对应哪个已保存的 profile。如果当前还没有 `settings.json`，会输出提示并返回成功状态。
+打印当前 `settings.json` 内容，并尽量识别它对应哪个已保存的 profile。默认会 mask `ANTHROPIC_AUTH_TOKEN`；如果你确实要看完整值，使用 `cc-switch current --show-token`。如果当前还没有 `settings.json`，会输出提示并返回成功状态。
 
 ```bash
 cc-switch backup
@@ -121,17 +121,23 @@ cc-switch help
 - 执行 `use` 时会先自动备份当前全局配置。
 - 执行 `restore` 时也会先备份当前全局配置。
 - 备份默认只保留最近 `50` 份；可通过环境变量 `BACKUP_KEEP_COUNT` 调整。
-- profile 名只允许字母、数字、`.`、`_`、`-`，避免写出目录穿越路径。
+- `cc-switch current` 默认会 mask `ANTHROPIC_AUTH_TOKEN`；只有 `cc-switch current --show-token` 才会显示完整值。
+- profile 名只允许字母、数字、`.`、`_`、`-`，且不能以 `.` 开头，避免写出迷惑性的路径名。
 - 所有文件路径都做了引用处理，能够正确处理包含空格的路径。
-- `deepseek.json` 中的 token 仍是占位值，切换前会给出警告。
+- 切换或恢复时使用同目录临时文件 + `mv` 写入 `~/.claude/settings.json`，并把权限置为 `600`，避免半截写入和 token 文件过宽权限。
+- 安装后的 `~/.claude/profiles/deepseek.json`（由 `deepseek.template.json` 复制而来）中的 token 仍是占位值，切换前会给出警告。
 
-## 示例 Profiles
+## Profiles 模板
 
-安装脚本会附带这些示例文件：
+仓库跟踪的是模板文件：
 
-- `official.json`
-- `deepseek.json`
-- `local-test.json`
+- `official.template.json`
+- `deepseek.template.json`
+- `local-test.template.json`
+
+`profiles/.gitignore` 会忽略你本地新增的 `profiles/*.json`，所以你可以直接把个人 profile 放在仓库里的 `profiles/` 下使用，而不会误提交。
+
+安装时，这些模板会被复制到 `~/.claude/profiles/`，并自动去掉 `.template` 后缀，例如 `deepseek.template.json` 会安装成 `deepseek.json`。
 
 ## 一键安装
 

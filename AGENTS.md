@@ -1,7 +1,7 @@
 # Repository Guidelines
 
 ## Project Structure & Module Organization
-This repository is a flat Bash CLI project. Keep executable entrypoints at the root, such as `cc-switch` and `install.sh`, and keep user-facing documentation in `README.md`. Store product-shipped example profiles in `profiles/`. If tests or fixtures are added later, place them in dedicated directories such as `tests/` and `testdata/` instead of mixing them with the main scripts.
+This repository is a flat Bash CLI project. Keep executable entrypoints at the root, such as `cc-switch` and `install.sh`, and keep user-facing documentation in `README.md`. Store product-shipped example profile templates as `*.template.json` in `profiles/`; the install script copies them into `~/.claude/profiles/` with the `.template` suffix stripped, and `profiles/.gitignore` keeps user-local `*.json` out of the repo. If tests or fixtures are added later, place them in dedicated directories such as `tests/` and `testdata/` instead of mixing them with the main scripts.
 
 ## Build, Test, and Development Commands
 No build step is required. Use shell-native checks during development:

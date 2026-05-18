@@ -34,18 +34,18 @@ if [[ -d "${backups_dir}" ]]; then
   done
 fi
 
-case "${CURRENT}" in
-  2)
-    _describe -t commands 'cc-switch command' commands
-    ;;
-  3)
-    case "${words[2]}" in
-      use|edit)
-        _describe -t profiles 'profile' profile_names
-        ;;
-      restore)
-        _describe -t backups 'backup file' backup_names
-        ;;
-    esac
-    ;;
-esac
+if (( CURRENT == 2 )); then
+  _describe -t commands 'cc-switch command' commands
+elif (( CURRENT == 3 )); then
+  case "${words[2]}" in
+    current)
+      _values 'current option' '--show-token[show full auth token in current output]'
+      ;;
+    use|edit)
+      _describe -t profiles 'profile' profile_names
+      ;;
+    restore)
+      _describe -t backups 'backup file' backup_names
+      ;;
+  esac
+fi
