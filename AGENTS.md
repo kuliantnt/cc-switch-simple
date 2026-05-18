@@ -1,7 +1,7 @@
 # Repository Guidelines
 
 ## Project Structure & Module Organization
-This repository is currently flat and centered on a small Bash CLI. The root currently contains [`agents.md`](/home/lianlian/project/cc-switch-simple/agents.md), which records the original product requirements. Keep executable entrypoints at the top level, for example `cc-switch` and `install.sh`, and keep user-facing documentation in `README.md`. If sample JSON profiles or fixtures are added, place them in a dedicated directory such as `examples/` or `testdata/` instead of mixing them with scripts.
+This repository is a flat Bash CLI project. Keep executable entrypoints at the root, such as `cc-switch` and `install.sh`, and keep user-facing documentation in `README.md`. Store example JSON profiles in `profiles/`. If tests or fixtures are added later, place them in dedicated directories such as `tests/` and `testdata/` instead of mixing them with the main scripts.
 
 ## Build, Test, and Development Commands
 No build step is required. Use shell-native checks during development:
