@@ -23,15 +23,21 @@ install_profile_if_missing() {
 }
 
 main() {
+  local -a profile_files=()
+
   mkdir -p "$PROFILES_DIR" "$BACKUPS_DIR" "$BIN_DIR"
 
   cp "${SCRIPT_DIR}/cc-switch" "$TARGET_BIN"
   chmod +x "$TARGET_BIN"
   printf 'Installed command: %s\n' "$TARGET_BIN"
 
-  install_profile_if_missing "${SCRIPT_DIR}/profiles/official.json"
-  install_profile_if_missing "${SCRIPT_DIR}/profiles/deepseek.json"
-  install_profile_if_missing "${SCRIPT_DIR}/profiles/local-test.json"
+  shopt -s nullglob
+  profile_files=("${SCRIPT_DIR}/profiles/"*.json)
+  shopt -u nullglob
+
+  for profile_file in "${profile_files[@]}"; do
+    install_profile_if_missing "$profile_file"
+  done
 
   case ":${PATH}:" in
     *":${BIN_DIR}:"*)
@@ -47,6 +53,7 @@ main() {
   printf '  cc-switch list\n'
   printf '  cc-switch use official\n'
   printf '  cc-switch current\n'
+  printf '  cc-switch help\n'
 }
 
 main "$@"

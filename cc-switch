@@ -6,6 +6,7 @@ CLAUDE_DIR="${HOME}/.claude"
 PROFILES_DIR="${CLAUDE_DIR}/profiles"
 BACKUPS_DIR="${CLAUDE_DIR}/backups"
 SETTINGS_FILE="${CLAUDE_DIR}/settings.json"
+BACKUP_KEEP_COUNT="${BACKUP_KEEP_COUNT:-50}"
 
 timestamp() {
   date +"%Y%m%d-%H%M%S"
@@ -24,9 +25,20 @@ ensure_dirs() {
   mkdir -p "$PROFILES_DIR" "$BACKUPS_DIR"
 }
 
+validate_profile_name() {
+  local name="$1"
+  [[ "$name" =~ ^[A-Za-z0-9._-]+$ ]] || die "Invalid profile name: $name"
+}
+
 profile_path() {
   local name="${1:-}"
   printf '%s/%s.json' "$PROFILES_DIR" "$name"
+}
+
+backup_path() {
+  local name="${1:-}"
+  [[ "$name" != */* ]] || die "Backup name must not contain '/': $name"
+  printf '%s/%s' "$BACKUPS_DIR" "$name"
 }
 
 json_validator() {
@@ -46,6 +58,7 @@ json_validator() {
 validate_json() {
   local file="$1"
   local validator
+  local err=""
   validator="$(json_validator)"
 
   if [[ ! -f "$file" ]]; then
@@ -53,11 +66,15 @@ validate_json() {
   fi
 
   if [[ "$validator" == "jq" ]]; then
-    jq empty "$file" >/dev/null 2>&1 || die "Invalid JSON: $file"
+    if ! err="$(jq empty "$file" 2>&1 >/dev/null)"; then
+      die "Invalid JSON: $file"$'\n'"$err"
+    fi
     return
   fi
 
-  python3 -m json.tool "$file" >/dev/null 2>&1 || die "Invalid JSON: $file"
+  if ! err="$(python3 -m json.tool "$file" 2>&1 >/dev/null)"; then
+    die "Invalid JSON: $file"$'\n'"$err"
+  fi
 }
 
 normalize_json() {
@@ -66,11 +83,11 @@ normalize_json() {
   validator="$(json_validator)"
 
   if [[ "$validator" == "jq" ]]; then
-    jq -S -c . "$file"
+    jq -S -c . "$file" 2>/dev/null
     return
   fi
 
-  python3 - "$file" <<'PY'
+  python3 - "$file" 2>/dev/null <<'PY'
 import json
 import sys
 
@@ -81,8 +98,33 @@ print(json.dumps(data, sort_keys=True, separators=(",", ":")))
 PY
 }
 
+cleanup_old_backups() {
+  local -a backups=()
+  local remove_count=0
+  local i=0
+
+  shopt -s nullglob
+  backups=("$BACKUPS_DIR"/settings-*.json)
+  shopt -u nullglob
+
+  if (( ${#backups[@]} <= BACKUP_KEEP_COUNT )); then
+    return
+  fi
+
+  IFS=$'\n' backups=($(printf '%s\n' "${backups[@]}" | sort))
+  unset IFS
+  remove_count=$((${#backups[@]} - BACKUP_KEEP_COUNT))
+
+  for ((i = 0; i < remove_count; i += 1)); do
+    rm -f -- "${backups[$i]}"
+  done
+}
+
 backup_current() {
   ensure_dirs
+  local base_timestamp=""
+  local backup_file=""
+  local suffix=1
 
   if [[ ! -f "$SETTINGS_FILE" ]]; then
     printf 'No current settings to back up.\n'
@@ -90,39 +132,49 @@ backup_current() {
   fi
 
   validate_json "$SETTINGS_FILE"
-  local backup_file="${BACKUPS_DIR}/settings-$(timestamp).json"
+  base_timestamp="$(timestamp)"
+  backup_file="${BACKUPS_DIR}/settings-${base_timestamp}.json"
+  while [[ -e "$backup_file" ]]; do
+    backup_file="${BACKUPS_DIR}/settings-${base_timestamp}-${suffix}.json"
+    suffix=$((suffix + 1))
+  done
   cp "$SETTINGS_FILE" "$backup_file"
+  cleanup_old_backups
   printf 'Backed up current settings to: %s\n' "$backup_file"
 }
 
 list_profiles() {
   ensure_dirs
 
-  local found=0
+  local -a files=()
   local file
-  for file in "$PROFILES_DIR"/*.json; do
-    if [[ -e "$file" ]]; then
-      found=1
-      basename "$file" .json
-    fi
-  done
 
-  if [[ "$found" -eq 0 ]]; then
+  shopt -s nullglob
+  files=("$PROFILES_DIR"/*.json)
+  shopt -u nullglob
+
+  if (( ${#files[@]} == 0 )); then
     printf 'No profiles found in %s\n' "$PROFILES_DIR"
+    return 0
   fi
+
+  for file in "${files[@]}"; do
+    basename "$file" .json
+  done
 }
 
 detect_current_profile() {
   local current_normalized="$1"
+  local -a files=()
   local file
   local profile_normalized
 
-  for file in "$PROFILES_DIR"/*.json; do
-    [[ -e "$file" ]] || continue
+  shopt -s nullglob
+  files=("$PROFILES_DIR"/*.json)
+  shopt -u nullglob
 
-    if ! validate_json "$file" >/dev/null 2>&1; then
-      continue
-    fi
+  for file in "${files[@]}"; do
+    validate_json "$file" >/dev/null 2>&1 || continue
 
     profile_normalized="$(normalize_json "$file")"
     if [[ "$current_normalized" == "$profile_normalized" ]]; then
@@ -138,7 +190,8 @@ show_current() {
   ensure_dirs
 
   if [[ ! -f "$SETTINGS_FILE" ]]; then
-    die "Current settings not found: $SETTINGS_FILE"
+    printf 'No settings.json yet at %s\n' "$SETTINGS_FILE"
+    return 0
   fi
 
   validate_json "$SETTINGS_FILE"
@@ -163,9 +216,37 @@ show_current() {
   fi
 }
 
+warn_placeholder_token() {
+  local file="$1"
+  local validator=""
+  local token=""
+
+  validator="$(json_validator)"
+
+  if [[ "$validator" == "jq" ]]; then
+    token="$(jq -r '.env.ANTHROPIC_AUTH_TOKEN // empty' "$file" 2>/dev/null)"
+  else
+    token="$(python3 - "$file" 2>/dev/null <<'PY'
+import json
+import sys
+
+with open(sys.argv[1], "r", encoding="utf-8") as fh:
+    data = json.load(fh)
+
+print(data.get("env", {}).get("ANTHROPIC_AUTH_TOKEN", ""))
+PY
+)"
+  fi
+
+  if [[ "$token" == "sk-填这里" ]]; then
+    printf 'Warning: %s still contains a placeholder token.\n' "$file" >&2
+  fi
+}
+
 use_profile() {
   local name="${1:-}"
   [[ -n "$name" ]] || die "Usage: cc-switch use <profile>"
+  validate_profile_name "$name"
 
   ensure_dirs
   local source_file
@@ -173,6 +254,7 @@ use_profile() {
 
   [[ -f "$source_file" ]] || die "Profile not found: $source_file"
   validate_json "$source_file"
+  warn_placeholder_token "$source_file"
 
   if [[ -f "$SETTINGS_FILE" ]]; then
     backup_current
@@ -188,6 +270,7 @@ use_profile() {
 edit_profile() {
   local name="${1:-}"
   [[ -n "$name" ]] || die "Usage: cc-switch edit <profile>"
+  validate_profile_name "$name"
 
   ensure_dirs
   local file
@@ -201,6 +284,7 @@ edit_profile() {
 new_profile() {
   local name="${1:-}"
   [[ -n "$name" ]] || die "Usage: cc-switch new <profile>"
+  validate_profile_name "$name"
 
   ensure_dirs
 
@@ -221,6 +305,28 @@ new_profile() {
   printf 'Created profile: %s\n' "$file"
 }
 
+restore_backup() {
+  local name="${1:-}"
+  [[ -n "$name" ]] || die "Usage: cc-switch restore <backup-file>"
+
+  ensure_dirs
+
+  local source_file
+  source_file="$(backup_path "$name")"
+  [[ -f "$source_file" ]] || die "Backup not found: $source_file"
+  validate_json "$source_file"
+
+  if [[ -f "$SETTINGS_FILE" ]]; then
+    backup_current
+  else
+    printf 'Initializing new settings file.\n'
+  fi
+
+  cp "$source_file" "$SETTINGS_FILE"
+  printf 'Restored backup: %s\n' "$source_file"
+  printf 'Updated: %s\n' "$SETTINGS_FILE"
+}
+
 usage() {
   cat <<'EOF'
 Usage:
@@ -230,11 +336,13 @@ Usage:
   cc-switch backup
   cc-switch edit <profile>
   cc-switch new <profile>
+  cc-switch restore <backup-file>
 
 Examples:
   cc-switch list
   cc-switch use deepseek
   cc-switch current
+  cc-switch restore settings-20260518-142604.json
 EOF
 }
 
@@ -259,6 +367,9 @@ main() {
       ;;
     new)
       new_profile "${2:-}"
+      ;;
+    restore)
+      restore_backup "${2:-}"
       ;;
     help|-h|--help)
       usage

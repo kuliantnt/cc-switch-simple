@@ -47,7 +47,7 @@ cc-switch use deepseek
 cc-switch current
 ```
 
-打印当前 `settings.json` 内容，并尽量识别它对应哪个已保存的 profile。
+打印当前 `settings.json` 内容，并尽量识别它对应哪个已保存的 profile。如果当前还没有 `settings.json`，会输出提示并返回成功状态。
 
 ```bash
 cc-switch backup
@@ -67,13 +67,29 @@ cc-switch new my-profile
 
 把当前 `settings.json` 复制为一个新的 profile，例如 `my-profile.json`。
 
+```bash
+cc-switch restore settings-20260518-142604.json
+```
+
+把指定备份文件恢复为当前 `settings.json`。如果当前已有配置，会先自动再备份一次。
+
+```bash
+cc-switch help
+```
+
+显示命令帮助，`-h` 和 `--help` 也可用。
+
 ## 校验与安全
 
 - 如果目标 profile 不是合法 JSON，将拒绝切换。
 - 优先使用 `jq` 校验；如果系统没有 `jq`，则回退到 `python3 -m json.tool`。
 - 不会删除已有 profile。
 - 执行 `use` 时会先自动备份当前全局配置。
+- 执行 `restore` 时也会先备份当前全局配置。
+- 备份默认只保留最近 `50` 份；可通过环境变量 `BACKUP_KEEP_COUNT` 调整。
+- profile 名只允许字母、数字、`.`、`_`、`-`，避免写出目录穿越路径。
 - 所有文件路径都做了引用处理，能够正确处理包含空格的路径。
+- `deepseek.json` 中的 token 仍是占位值，切换前会给出警告。
 
 ## 示例 Profiles
 
