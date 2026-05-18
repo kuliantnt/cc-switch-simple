@@ -11,6 +11,7 @@ _cc_switch() {
 
   commands=(
     'list:List available profiles'
+    'next:Switch to the next saved profile'
     'use:Switch to a saved profile'
     'current:Show current settings and matched profile'
     'backup:Create a timestamped backup'

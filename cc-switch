@@ -6,7 +6,7 @@ CLAUDE_DIR="${HOME}/.claude"
 PROFILES_DIR="${CLAUDE_DIR}/profiles"
 BACKUPS_DIR="${CLAUDE_DIR}/backups"
 SETTINGS_FILE="${CLAUDE_DIR}/settings.json"
-BACKUP_KEEP_COUNT="${BACKUP_KEEP_COUNT:-50}"
+BACKUP_KEEP_COUNT="${BACKUP_KEEP_COUNT:-10}"
 
 timestamp() {
   date +"%Y%m%d-%H%M%S"
@@ -228,15 +228,51 @@ backup_current() {
   printf 'Backed up current settings to: %s\n' "$backup_file"
 }
 
-list_profiles() {
+create_backup() {
+  ensure_dirs
+  local base_timestamp=""
+  local backup_file=""
+  local suffix=1
+
+  if [[ ! -f "$SETTINGS_FILE" ]]; then
+    return 1
+  fi
+
+  validate_json "$SETTINGS_FILE"
+  base_timestamp="$(timestamp)"
+  backup_file="${BACKUPS_DIR}/settings-${base_timestamp}.json"
+  while [[ -e "$backup_file" ]]; do
+    backup_file="${BACKUPS_DIR}/settings-${base_timestamp}-${suffix}.json"
+    suffix=$((suffix + 1))
+  done
+
+  cp "$SETTINGS_FILE" "$backup_file"
+  cleanup_old_backups
+  printf '%s\n' "$backup_file"
+}
+
+profile_files_sorted() {
   ensure_dirs
 
   local -a files=()
-  local file
 
   shopt -s nullglob
   files=("$PROFILES_DIR"/*.json)
   shopt -u nullglob
+
+  if (( ${#files[@]} == 0 )); then
+    return 1
+  fi
+
+  mapfile -d '' -t files < <(printf '%s\0' "${files[@]}" | sort -z)
+  printf '%s\n' "${files[@]}"
+}
+
+list_profiles() {
+  local -a files=()
+  local file
+
+  mapfile -t files < <(profile_files_sorted) || true
 
   if (( ${#files[@]} == 0 )); then
     printf 'No profiles found in %s\n' "$PROFILES_DIR"
@@ -248,24 +284,31 @@ list_profiles() {
   done
 }
 
-detect_current_profile() {
-  local current_normalized="$1"
-  local -a files=()
+detect_current_profile_index() {
+  local -n profile_files_ref=$1
+  local current_normalized="${2:-}"
   local file
   local profile_normalized
+  local index=0
 
-  shopt -s nullglob
-  files=("$PROFILES_DIR"/*.json)
-  shopt -u nullglob
+  if [[ -z "$current_normalized" ]]; then
+    [[ -f "$SETTINGS_FILE" ]] || return 1
+    validate_json "$SETTINGS_FILE"
+    current_normalized="$(normalize_json "$SETTINGS_FILE")"
+  fi
 
-  for file in "${files[@]}"; do
-    validate_json "$file" >/dev/null 2>&1 || continue
+  for file in "${profile_files_ref[@]}"; do
+    if ! validate_json "$file" >/dev/null 2>&1; then
+      index=$((index + 1))
+      continue
+    fi
 
     profile_normalized="$(normalize_json "$file")"
     if [[ "$current_normalized" == "$profile_normalized" ]]; then
-      basename "$file" .json
+      printf '%s\n' "$index"
       return 0
     fi
+    index=$((index + 1))
   done
 
   return 1
@@ -296,11 +339,15 @@ show_current() {
 
   validate_json "$SETTINGS_FILE"
 
+  local -a profile_files=()
   local current_name=""
+  local current_index=""
   local current_normalized
   current_normalized="$(normalize_json "$SETTINGS_FILE")"
+  mapfile -t profile_files < <(profile_files_sorted) || true
 
-  if current_name="$(detect_current_profile "$current_normalized")"; then
+  if current_index="$(detect_current_profile_index profile_files "$current_normalized")"; then
+    current_name="$(basename "${profile_files[$current_index]}" .json)"
     printf 'Current profile: %s\n' "$current_name"
   else
     printf 'Current profile: unknown\n'
@@ -372,6 +419,56 @@ use_profile() {
   printf 'Updated: %s\n' "$SETTINGS_FILE"
 }
 
+switch_next_profile() {
+  ensure_dirs
+
+  local -a profile_files=()
+  local current_index=-1
+  local next_index=0
+  local current_name="unknown"
+  local next_name=""
+  local next_file=""
+  local backup_file=""
+
+  mapfile -t profile_files < <(profile_files_sorted) || true
+
+  if (( ${#profile_files[@]} == 0 )); then
+    die "No profiles found in $PROFILES_DIR"
+  fi
+
+  if current_index="$(detect_current_profile_index profile_files)"; then
+    current_name="$(basename "${profile_files[$current_index]}" .json)"
+    next_index=$(((current_index + 1) % ${#profile_files[@]}))
+  fi
+
+  next_file="${profile_files[$next_index]}"
+  next_name="$(basename "$next_file" .json)"
+
+  validate_json "$next_file"
+  warn_placeholder_token "$next_file"
+
+  printf 'Current: %s\n' "$current_name"
+  printf 'Next: %s\n' "$next_name"
+
+  if [[ -f "$SETTINGS_FILE" ]]; then
+    backup_file="$(create_backup)"
+  else
+    printf 'Initializing new settings file.\n'
+  fi
+
+  write_settings_atomically "$next_file" "$SETTINGS_FILE"
+
+  if (( ${#profile_files[@]} == 1 )); then
+    printf 'Only one profile available.\n'
+  fi
+
+  printf 'Switched to profile: %s\n' "$next_name"
+  if [[ -n "$backup_file" ]]; then
+    printf 'Backup: %s\n' "$backup_file"
+  fi
+  printf 'Updated: %s\n' "$SETTINGS_FILE"
+}
+
 edit_profile() {
   local name="${1:-}"
   [[ -n "$name" ]] || die "Usage: cc-switch edit <profile>"
@@ -436,16 +533,21 @@ restore_backup() {
 usage() {
   cat <<'EOF'
 Usage:
+  cc-switch
   cc-switch list
+  cc-switch next
   cc-switch use <profile>
   cc-switch current [--show-token]
   cc-switch backup
   cc-switch edit <profile>
   cc-switch new <profile>
   cc-switch restore <backup-file>
+  cc-switch help
 
 Examples:
+  cc-switch
   cc-switch list
+  cc-switch next
   cc-switch use deepseek
   cc-switch current
   cc-switch current --show-token
@@ -455,9 +557,16 @@ EOF
 
 main() {
   local command="${1:-help}"
-  shift || true
+
+  if (( $# > 0 )); then
+    shift || true
+  fi
 
   case "$command" in
+    next)
+      (( $# == 0 )) || die "Usage: cc-switch next"
+      switch_next_profile
+      ;;
     list)
       list_profiles
       ;;

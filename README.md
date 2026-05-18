@@ -32,10 +32,10 @@ export PATH="$HOME/.local/bin:$PATH"
 ## 快速使用
 
 ```bash
-cc-switch
+cc-switch help
 ```
 
-无参数时默认执行 `next`，会按文件名排序切换到下一个 profile。
+无参数时显示帮助；切换到下一个 profile 请显式使用 `cc-switch next`。
 
 ```bash
 cc-switch list
@@ -47,7 +47,8 @@ cc-switch restore settings-20260518-142604.json
 
 可用命令：
 
-- `cc-switch` / `cc-switch next`：切到下一个 profile
+- `cc-switch`：显示帮助
+- `cc-switch next`：切到下一个 profile
 - `cc-switch list`：列出 profile
 - `cc-switch use <profile>`：切到指定 profile
 - `cc-switch current [--show-token]`：查看当前配置

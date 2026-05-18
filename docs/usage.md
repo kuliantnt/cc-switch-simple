@@ -6,13 +6,13 @@
 cc-switch
 ```
 
-无参数时等价于：
+无参数时显示帮助，不会修改当前配置。切换到下一个 profile 请显式使用：
 
 ```bash
 cc-switch next
 ```
 
-它会按文件名排序读取 `~/.claude/profiles/*.json`，判断当前 `~/.claude/settings.json` 是否和某个 profile 完全一致，然后切到下一个；如果已经是最后一个则循环回第一个；如果当前配置无法识别或 `settings.json` 还不存在，则直接切到第一个 profile。
+`next` 会按文件名排序读取 `~/.claude/profiles/*.json`，判断当前 `~/.claude/settings.json` 是否和某个 profile 内容一致，然后切到下一个；如果已经是最后一个则循环回第一个；如果当前配置无法识别或 `settings.json` 还不存在，则直接切到第一个 profile。
 
 ## 命令
 
@@ -71,7 +71,7 @@ cc-switch -h
 cc-switch --help
 ```
 
-显示帮助。由于 `cc-switch` 默认执行 `next`，如果只是想看帮助，请显式使用上面的形式。
+显示帮助。无参数执行 `cc-switch` 时也会显示同样的帮助。
 
 ## 手动测试
 
@@ -80,8 +80,7 @@ cc-switch --help
 ```bash
 cc-switch list
 cc-switch current
-cc-switch
-cc-switch
+cc-switch next
 cc-switch next
 cc-switch use deepseek
 cc-switch
@@ -90,6 +89,7 @@ cc-switch
 重点确认：
 
 - `list` 的顺序是否按文件名排序
-- `cc-switch` 和 `next` 是否按顺序循环切换
+- `cc-switch` 是否稳定输出帮助且不改写当前配置
+- `next` 是否按顺序循环切换
 - `current` 识别出的 profile 是否与刚切换到的目标一致
 - 当前配置不匹配任何 profile 时，是否显示 `Current: unknown` 并切到第一个 profile
