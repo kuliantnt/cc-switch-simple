@@ -8,6 +8,21 @@
 - 可复用 profiles：`~/.claude/profiles/*.json`
 - 备份目录：`~/.claude/backups/settings-YYYYmmdd-HHMMSS.json`
 
+## 和 `ccs` 的区别
+
+截至 `2026-05-18`，GitHub 上较热门的同类项目之一是 [`kaitranntt/ccs`](https://github.com/kaitranntt/ccs)。
+
+这个仓库和它的定位不同：
+
+- `cc-switch` 只做一件事：在本机直接切换 `~/.claude/settings.json`
+- `cc-switch` 是纯 Bash 脚本，零构建、零后台服务、零 Web 面板
+- `cc-switch` 主要面向“我已经有几份 `settings.json`，只想安全备份后快速切换”这个场景
+- `ccs` 更像完整的多 provider / 多 runtime 管理器，覆盖 Claude 账号切换、OAuth provider、代理、面板、远程能力等更重的功能
+- 如果你需要的是小而透明、容易审计、方便自己改的脚本，这个项目更合适
+- 如果你需要的是跨 provider 的统一入口和更完整的产品化能力，`ccs` 更合适
+
+换句话说，这个项目不是要和 `ccs` 拼功能数量，而是刻意保持“单文件、可读、可改、可直接落地”。
+
 ## 文件说明
 
 - `cc-switch`：主命令行脚本
