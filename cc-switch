@@ -447,8 +447,8 @@ switch_next_profile() {
   validate_json "$next_file"
   warn_placeholder_token "$next_file"
 
-  printf 'Current: %s\n' "$current_name"
-  printf 'Next: %s\n' "$next_name"
+  printf 'Before: %s\n' "$current_name"
+  printf 'After: %s\n' "$next_name"
 
   if [[ -f "$SETTINGS_FILE" ]]; then
     backup_file="$(create_backup)"

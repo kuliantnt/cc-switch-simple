@@ -26,7 +26,7 @@ cc-switch list
 cc-switch next
 ```
 
-显式切换到下一个 profile。若只有一个 profile，仍会切换到该唯一 profile，并给出提示。
+显式切换到下一个 profile。命令会先打印修改前的 profile，再打印修改后的 profile。若只有一个 profile，仍会切换到该唯一 profile，并给出提示。
 
 ```bash
 cc-switch use deepseek
