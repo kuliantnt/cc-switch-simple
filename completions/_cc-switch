@@ -1,51 +1,66 @@
 #compdef cc-switch
 
-local claude_dir profiles_dir backups_dir
-claude_dir="${HOME}/.claude"
-profiles_dir="${claude_dir}/profiles"
-backups_dir="${claude_dir}/backups"
+_cc_switch() {
+  local claude_dir profiles_dir backups_dir state
+  local -a commands profile_names backup_names
+  local file name
 
-local -a commands profile_names backup_names
-local file name
+  claude_dir="${HOME}/.claude"
+  profiles_dir="${claude_dir}/profiles"
+  backups_dir="${claude_dir}/backups"
 
-commands=(
-  'list:List available profiles'
-  'use:Switch to a saved profile'
-  'current:Show current settings and matched profile'
-  'backup:Create a timestamped backup'
-  'edit:Edit a saved profile'
-  'new:Create a profile from current settings'
-  'restore:Restore a backup file'
-  'help:Show command help'
-)
+  commands=(
+    'list:List available profiles'
+    'use:Switch to a saved profile'
+    'current:Show current settings and matched profile'
+    'backup:Create a timestamped backup'
+    'edit:Edit a saved profile'
+    'new:Create a profile from current settings'
+    'restore:Restore a backup file'
+    'help:Show command help'
+  )
 
-profile_names=()
-if [[ -d "${profiles_dir}" ]]; then
-  for file in "${profiles_dir}"/*.json(N); do
-    name="${file:t:r}"
-    profile_names+=("${name}")
-  done
-fi
+  profile_names=()
+  if [[ -d "${profiles_dir}" ]]; then
+    for file in "${profiles_dir}"/*.json(N); do
+      name="${file:t:r}"
+      profile_names+=("${name}")
+    done
+  fi
 
-backup_names=()
-if [[ -d "${backups_dir}" ]]; then
-  for file in "${backups_dir}"/settings-*.json(N); do
-    backup_names+=("${file:t}")
-  done
-fi
+  backup_names=()
+  if [[ -d "${backups_dir}" ]]; then
+    for file in "${backups_dir}"/*.json(N); do
+      backup_names+=("${file:t}")
+    done
+  fi
 
-if (( CURRENT == 2 )); then
-  _describe -t commands 'cc-switch command' commands
-elif (( CURRENT == 3 )); then
-  case "${words[2]}" in
-    current)
-      _values 'current option' '--show-token[show full auth token in current output]'
+  _arguments -C \
+    '1:command:->command' \
+    '2:argument:->argument' \
+    '*:: :->none'
+
+  case "${state}" in
+    command)
+      _describe -t commands 'cc-switch command' commands
       ;;
-    use|edit)
-      _describe -t profiles 'profile' profile_names
-      ;;
-    restore)
-      _describe -t backups 'backup file' backup_names
+    argument)
+      case "${words[2]}" in
+        current)
+          _values 'current option' '--show-token[show full auth token in current output]'
+          ;;
+        use|edit)
+          _describe -t profiles 'profile' profile_names
+          ;;
+        restore)
+          _describe -t backups 'backup file' backup_names
+          ;;
+        new)
+          _message 'new profile name'
+          ;;
+      esac
       ;;
   esac
-fi
+}
+
+_cc_switch "$@"

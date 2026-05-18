@@ -8,8 +8,9 @@ PROFILES_DIR="${CLAUDE_DIR}/profiles"
 BACKUPS_DIR="${CLAUDE_DIR}/backups"
 BIN_DIR="${HOME}/.local/bin"
 TARGET_BIN="${BIN_DIR}/cc-switch"
-ZSH_COMPLETIONS_DIR="${HOME}/.local/share/zsh/site-functions"
+ZSH_COMPLETIONS_DIR="${HOME}/.zsh/completions"
 TARGET_ZSH_COMPLETION="${ZSH_COMPLETIONS_DIR}/_cc-switch"
+ZSHRC_FILE="${HOME}/.zshrc"
 
 usage() {
   cat <<'EOF'
@@ -88,6 +89,25 @@ remove_dir_if_empty() {
   fi
 }
 
+print_zsh_completion_hint() {
+  printf '\nZsh completion setup:\n'
+
+  if [[ -f "$ZSHRC_FILE" ]] && grep -Eq '(^|[[:space:]])compinit($|[[:space:]])' "$ZSHRC_FILE"; then
+    printf '  Your %s already appears to run compinit.\n' "$ZSHRC_FILE"
+    printf '  Manually confirm this line is above compinit:\n'
+    printf '  fpath=("$HOME/.zsh/completions" $fpath)\n'
+  else
+    printf '  Add this to %s:\n' "$ZSHRC_FILE"
+    printf '  fpath=("$HOME/.zsh/completions" $fpath)\n'
+    printf '  autoload -Uz compinit\n'
+    printf '  compinit\n'
+  fi
+
+  printf '  If completion still does not load, clear the zsh cache:\n'
+  printf '  rm -f ~/.zcompdump*\n'
+  printf '  exec zsh\n'
+}
+
 install_main() {
   local -a profile_files=()
   local profile_file
@@ -119,8 +139,7 @@ install_main() {
       ;;
   esac
 
-  printf '\nIf zsh completion is not active yet, add this to ~/.zshrc before compinit:\n'
-  printf 'fpath=("$HOME/.local/share/zsh/site-functions" $fpath)\n'
+  print_zsh_completion_hint
 
   printf '\nTry these commands:\n'
   printf '  cc-switch list\n'
@@ -149,8 +168,6 @@ uninstall_main() {
   remove_dir_if_empty "$CLAUDE_DIR"
   remove_dir_if_empty "$BIN_DIR"
   remove_dir_if_empty "$ZSH_COMPLETIONS_DIR"
-  remove_dir_if_empty "${HOME}/.local/share/zsh"
-  remove_dir_if_empty "${HOME}/.local/share"
   remove_dir_if_empty "${HOME}/.local"
 
   printf '\nUninstall finished.\n'

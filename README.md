@@ -51,12 +51,16 @@ chmod +x cc-switch install.sh
 export PATH="$HOME/.local/bin:$PATH"
 ```
 
-如果你使用 `zsh`，安装脚本还会把补全文件安装到 `~/.local/share/zsh/site-functions/_cc-switch`。
-若补全还没有生效，把下面这行加入 `~/.zshrc`，并确保它出现在 `compinit` 之前：
+如果你使用 `zsh`，安装脚本会把补全文件安装到 `~/.zsh/completions/_cc-switch`。
+若补全还没有生效，先确认 `~/.zshrc` 里在 `compinit` 之前加入了：
 
 ```bash
-fpath=("$HOME/.local/share/zsh/site-functions" $fpath)
+fpath=("$HOME/.zsh/completions" $fpath)
+autoload -Uz compinit
+compinit
 ```
+
+如果你已经有 `autoload -Uz compinit` / `compinit`，不要重复写第二遍，只需要确认 `fpath=("$HOME/.zsh/completions" $fpath)` 出现在它前面。
 
 `./install.sh uninstall` 会删除已安装的命令和 `zsh` 补全，并删除仓库自带且未被修改过的模板生成 profile。
 为避免误删用户数据，它不会删除 `~/.claude/settings.json`、备份文件，也不会删除你改过的 profile。
@@ -138,6 +142,33 @@ cc-switch help
 `profiles/.gitignore` 会忽略你本地新增的 `profiles/*.json`，所以你可以直接把个人 profile 放在仓库里的 `profiles/` 下使用，而不会误提交。
 
 安装时，这些模板会被复制到 `~/.claude/profiles/`，并自动去掉 `.template` 后缀，例如 `deepseek.template.json` 会安装成 `deepseek.json`。
+
+## Zsh 补全排错
+
+如果 `cc-switch <Tab>` 只出现普通文件名，通常是 `fpath` 加载顺序不对，或者 `zsh` 还在使用旧缓存。按下面顺序排查：
+
+```bash
+which cc-switch
+cc-switch list
+```
+
+确认命令本体正常后，再检查补全文件和缓存：
+
+```bash
+ls ~/.zsh/completions/_cc-switch
+head -5 ~/.zsh/completions/_cc-switch
+rm -f ~/.zcompdump*
+exec zsh
+```
+
+然后重新测试：
+
+```bash
+cc-switch <Tab>
+cc-switch use <Tab>
+cc-switch edit <Tab>
+cc-switch restore <Tab>
+```
 
 ## 一键安装
 
