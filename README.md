@@ -1,5 +1,7 @@
 # cc-switch
 
+>本项目专注 Claude Code 配置切换。Codex 已支持 config.toml profiles，建议直接使用 codex --profile <name>。
+
 `cc-switch` 是一个在 WSL/Linux 下切换 Claude Code 全局配置的 Bash 小工具。
 
 它只做一件事：在本机安全地切换 `~/.claude/settings.json`，并管理常用的 profile 和备份。
