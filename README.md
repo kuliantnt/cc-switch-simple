@@ -51,7 +51,7 @@ cc-switch restore settings-20260518-142604.json
 
 - `cc-switch`：显示帮助
 - `cc-switch next`：切到下一个 profile
-- `cc-switch list`：列出 profile
+- `cc-switch list`：列出 profile，并用 `*` 标记当前使用中的配置
 - `cc-switch use <profile>`：切到指定 profile
 - `cc-switch current [--show-token]`：查看当前配置
 - `cc-switch backup`：手动创建备份

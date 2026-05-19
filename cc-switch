@@ -270,6 +270,9 @@ profile_files_sorted() {
 
 list_profiles() {
   local -a files=()
+  local current_index=""
+  local current_normalized=""
+  local index=0
   local file
 
   mapfile -t files < <(profile_files_sorted) || true
@@ -279,8 +282,21 @@ list_profiles() {
     return 0
   fi
 
+  printf 'Available profiles:\n\n'
+
+  if [[ -f "$SETTINGS_FILE" ]]; then
+    validate_json "$SETTINGS_FILE"
+    current_normalized="$(normalize_json "$SETTINGS_FILE")"
+    current_index="$(detect_current_profile_index files "$current_normalized" || true)"
+  fi
+
   for file in "${files[@]}"; do
-    basename "$file" .json
+    if [[ -n "$current_index" && "$index" -eq "$current_index" ]]; then
+      printf '* %s\n' "$(basename "$file" .json)"
+    else
+      printf '  %s\n' "$(basename "$file" .json)"
+    fi
+    index=$((index + 1))
   done
 }
 
