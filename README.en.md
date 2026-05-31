@@ -4,6 +4,8 @@
 
 # cc-switch
 
+[toc]
+
 `cc-switch` is a Rust-based cross-platform CLI with two switching modes:
 
 - Claude Code JSON profile switching
@@ -46,12 +48,12 @@ Behavior:
 
 ## Runtime Layout
 
-Claude Code runtime directory:
+Default runtime root:
 
 - Linux/macOS: `~/.cc-switch-simple/`
 - Windows: `cc-switch-simple/` under the user's config directory
 
-Inside it:
+Claude Code files:
 
 - `profiles/` stores Claude JSON profiles
 - `backups/` stores Claude backups
@@ -78,8 +80,9 @@ Notes:
 - it applies to both Claude and Codex backup retention; for Codex, `config.toml` and `auth.json` each keep up to `max_files` backups
 - relative `settings_path` values are resolved from the runtime config directory
 
-Codex runtime paths are fixed:
+Codex files:
 
+- preset root: `~/.cc-switch-simple/codex/`
 - preset config: `~/.cc-switch-simple/codex/<name>/config.toml`
 - preset auth: `~/.cc-switch-simple/codex/<name>/auth.json`
 - current selection record: `~/.cc-switch-simple/codex/current`
@@ -92,6 +95,13 @@ Codex mode switches both files together:
 - the selected preset must contain both `config.toml` and `auth.json`
 - existing target files are backed up before overwrite
 - `cc-switch` does not print API keys or token values
+
+Auto-creation rules:
+
+- Claude-related commands create `~/.cc-switch-simple/`, `profiles/`, and `backups/`
+- `cc-switch cx use <name>` creates `~/.cc-switch-simple/codex/`, `~/.cc-switch-simple/backups/codex/`, and `${CODEX_HOME:-$HOME/.codex}/`
+- `~/.cc-switch-simple/codex/<name>/` and its `config.toml` / `auth.json` are not generated automatically and must still be prepared manually
+- `cc-switch cx list` and `cc-switch cx current` only read existing files and do not initialize presets
 
 ## Claude Profile Setup
 
@@ -112,7 +122,7 @@ cp profiles/local-test.template.json ~/.cc-switch-simple/profiles/local-test.jso
 
 ## Codex Preset Setup
 
-Create two example presets:
+Create the preset directories first:
 
 ```bash
 mkdir -p ~/.cc-switch-simple/codex/openai

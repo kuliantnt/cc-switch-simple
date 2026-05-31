@@ -4,6 +4,8 @@
 
 # cc-switch
 
+[toc]
+
 `cc-switch` 是一个 Rust 编写的跨平台 CLI，现在同时支持两种切换模式：
 
 - Claude Code JSON profile 切换
@@ -46,12 +48,12 @@ cc-switch cx next
 
 ## 运行时目录
 
-Claude Code 运行时目录：
+默认运行时根目录：
 
 - Linux/macOS: `~/.cc-switch-simple/`
 - Windows: 用户配置目录下的 `cc-switch-simple/`
 
-其中：
+Claude Code 相关文件：
 
 - `profiles/`：Claude JSON profile
 - `backups/`：Claude 自动备份
@@ -78,8 +80,9 @@ max_files = 5
 - 同时作用于 Claude 和 Codex 的自动备份保留数量；对于 Codex，会对 `config.toml` 和 `auth.json` 分别保留 `max_files` 个备份
 - 如果 `settings_path` 是相对路径，会相对 `config.toml` 所在目录解析
 
-Codex 运行时目录固定为：
+Codex 相关文件：
 
+- 预设根目录：`~/.cc-switch-simple/codex/`
 - 预设配置：`~/.cc-switch-simple/codex/<name>/config.toml`
 - 预设认证：`~/.cc-switch-simple/codex/<name>/auth.json`
 - 当前选择记录：`~/.cc-switch-simple/codex/current`
@@ -92,6 +95,13 @@ Codex 模式会一起切换这两个文件：
 - 选中的预设目录必须同时包含 `config.toml` 和 `auth.json`
 - 覆盖前会分别备份当前目标文件
 - `cc-switch` 不会输出 API Key 或 token 内容
+
+自动创建规则：
+
+- Claude 相关命令会自动创建 `~/.cc-switch-simple/`、`profiles/`、`backups/`
+- `cc-switch cx use <name>` 会自动创建 `~/.cc-switch-simple/codex/`、`~/.cc-switch-simple/backups/codex/`，以及 `${CODEX_HOME:-$HOME/.codex}/`
+- `~/.cc-switch-simple/codex/<name>/` 和其中的 `config.toml`、`auth.json` 不会自动生成，仍需手动准备
+- `cc-switch cx list` 和 `cc-switch cx current` 只读取现有文件，不会初始化预设目录
 
 ## Claude Profile 初始化
 
@@ -112,7 +122,7 @@ cp profiles/local-test.template.json ~/.cc-switch-simple/profiles/local-test.jso
 
 ## Codex 预设初始化
 
-创建两个示例预设：
+先手动创建预设目录：
 
 ```bash
 mkdir -p ~/.cc-switch-simple/codex/openai
