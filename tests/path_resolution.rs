@@ -3,7 +3,10 @@ use std::fs;
 use directories::BaseDirs;
 use tempfile::TempDir;
 
-use cc_switch::paths::{default_target_settings_path, load_config, resolve_user_path};
+use cc_switch::paths::{
+    default_codex_backups_dir, default_codex_profiles_dir, default_target_settings_path,
+    load_config, resolve_codex_home_dir, resolve_user_path,
+};
 
 #[test]
 fn resolve_user_path_expands_home_prefix() {
@@ -89,4 +92,32 @@ fn default_target_settings_path_points_to_home_claude_dir() {
     let base_dirs = BaseDirs::new().unwrap();
     let target = default_target_settings_path(&base_dirs);
     assert!(target.ends_with(".claude/settings.json"));
+}
+
+#[test]
+fn default_codex_paths_point_to_cc_switch_simple_dir() {
+    let base_dirs = BaseDirs::new().unwrap();
+    assert!(default_codex_profiles_dir(&base_dirs).ends_with(".cc-switch-simple/codex"));
+    assert!(default_codex_backups_dir(&base_dirs).ends_with(".cc-switch-simple/backups/codex"));
+}
+
+#[test]
+fn resolve_codex_home_dir_uses_override_when_present() {
+    let temp_dir = TempDir::new().unwrap();
+    let home_dir = temp_dir.path().join("home");
+    fs::create_dir_all(&home_dir).unwrap();
+
+    let resolved =
+        resolve_codex_home_dir(&home_dir, Some(temp_dir.path().join("custom-codex"))).unwrap();
+    assert_eq!(resolved, temp_dir.path().join("custom-codex"));
+}
+
+#[test]
+fn resolve_codex_home_dir_defaults_to_home_dot_codex() {
+    let temp_dir = TempDir::new().unwrap();
+    let home_dir = temp_dir.path().join("home");
+    fs::create_dir_all(&home_dir).unwrap();
+
+    let resolved = resolve_codex_home_dir(&home_dir, None::<&str>).unwrap();
+    assert_eq!(resolved, home_dir.join(".codex"));
 }

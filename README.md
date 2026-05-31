@@ -4,16 +4,21 @@
 
 # cc-switch
 
-`cc-switch` 现在是一个 Rust 编写的跨平台 CLI，用来切换 Claude Code 的配置 profile。
+`cc-switch` 是一个 Rust 编写的跨平台 CLI，现在同时支持两种切换模式：
 
-这个版本故意保持很小：
+- Claude Code JSON profile 切换
+- Codex `config.toml` 预设切换
 
-- 管理 JSON profile
-- 把选中的 profile 写入 Claude Code 目标配置文件
-- 每次切换前自动备份当前配置
+工具保持小而直接：
+
+- 使用本地预设覆盖目标配置
+- 每次覆盖前自动备份
+- 不输出敏感值
 - 在 Windows / macOS / Linux 上以单文件可执行程序运行
 
 ## 命令
+
+Claude Code：
 
 ```text
 cc-switch list
@@ -23,32 +28,40 @@ cc-switch next
 cc-switch doctor
 ```
 
+Codex：
+
+```text
+cc-switch cx list
+cc-switch cx current
+cc-switch cx use <name>
+cc-switch cx next
+```
+
 行为规则：
 
-- profile 按文件名排序
-- `list` 会用 `*` 标记当前匹配到的 profile
-- `current` 会按规范化后的 JSON 内容匹配当前配置
-- `use` 和 `next` 都会先备份，再写入
-- `next` 在当前配置无法识别时，会回退到第一个 profile
+- Claude profile 按文件名排序，通过规范化 JSON 内容识别当前项
+- Codex profile 按目录名排序，通过 `~/.cc-switch-simple/codex/current` 记录当前项
+- `use` 和 `next` 覆盖前都会先备份现有目标文件
+- `next` 在当前项缺失或无法识别时，会回退到第一个 profile
 
 ## 运行时目录
 
-运行时配置目录：
+Claude Code 运行时目录：
 
 - Linux/macOS: `~/.cc-switch-simple/`
 - Windows: 用户配置目录下的 `cc-switch-simple/`
 
-目录内容：
+其中：
 
-- `profiles/`：profile JSON
-- `backups/`：自动备份
+- `profiles/`：Claude JSON profile
+- `backups/`：Claude 自动备份
 - `config.toml`：可选配置
 
 Claude Code 默认目标配置路径：
 
 - `~/.claude/settings.json`
 
-可以在 `config.toml` 中覆盖：
+可通过 `config.toml` 覆盖：
 
 ```toml
 [claude]
@@ -62,116 +75,130 @@ max_files = 5
 
 - `[backups].max_files` 默认是 `5`
 - `max_files` 必须大于 `0`
+- 同时作用于 Claude 和 Codex 的自动备份保留数量；对于 Codex，会对 `config.toml` 和 `auth.json` 分别保留 `max_files` 个备份
 - 如果 `settings_path` 是相对路径，会相对 `config.toml` 所在目录解析
 
-## 构建与安装
+Codex 运行时目录固定为：
+
+- 预设配置：`~/.cc-switch-simple/codex/<name>/config.toml`
+- 预设认证：`~/.cc-switch-simple/codex/<name>/auth.json`
+- 当前选择记录：`~/.cc-switch-simple/codex/current`
+- 备份目录：`~/.cc-switch-simple/backups/codex/`
+- 当前生效配置：`${CODEX_HOME:-$HOME/.codex}/config.toml`
+- 当前生效认证：`${CODEX_HOME:-$HOME/.codex}/auth.json`
+
+Codex 模式会一起切换这两个文件：
+
+- 选中的预设目录必须同时包含 `config.toml` 和 `auth.json`
+- 覆盖前会分别备份当前目标文件
+- `cc-switch` 不会输出 API Key 或 token 内容
+
+## Claude Profile 初始化
+
+仓库 `profiles/` 目录仍提供示例模板：
+
+- `profiles/official.template.json`
+- `profiles/deepseek.template.json`
+- `profiles/local-test.template.json`
+
+复制到运行时目录并去掉 `.template` 后缀即可：
+
+```bash
+mkdir -p ~/.cc-switch-simple/profiles
+cp profiles/official.template.json ~/.cc-switch-simple/profiles/official.json
+cp profiles/deepseek.template.json ~/.cc-switch-simple/profiles/deepseek.json
+cp profiles/local-test.template.json ~/.cc-switch-simple/profiles/local-test.json
+```
+
+## Codex 预设初始化
+
+创建两个示例预设：
+
+```bash
+mkdir -p ~/.cc-switch-simple/codex/openai
+mkdir -p ~/.cc-switch-simple/codex/xxxcom
+```
+
+`~/.cc-switch-simple/codex/openai/config.toml`：
+
+```toml
+model = "gpt-5"
+model_provider = "openai"
+approval_policy = "on-request"
+sandbox_mode = "workspace-write"
+```
+
+`~/.cc-switch-simple/codex/openai/auth.json`：
+
+```json
+{
+  "OPENAI_API_KEY": "<redacted>"
+}
+```
+
+`~/.cc-switch-simple/codex/xxxcom/config.toml`：
+
+```toml
+disable_response_storage = true
+model = "gpt-5.5"
+model_reasoning_effort = "high"
+model_provider = "xxxcom"
+model_context_window = 1000000
+model_auto_compact_token_limit = 900000
+
+[model_providers.xxxcom]
+name = "xxxcom"
+base_url = "https://xxxcom.net/v1"
+requires_openai_auth = true
+wire_api = "responses"
+```
+
+`~/.cc-switch-simple/codex/xxxcom/auth.json`：
+
+```json
+{
+  "XXXCOM_API_KEY": "<redacted>"
+}
+```
+
+切换时，`cc-switch` 会先备份，再覆盖 `${CODEX_HOME:-$HOME/.codex}/config.toml` 和 `${CODEX_HOME:-$HOME/.codex}/auth.json`。
+
+## 使用
+
+Claude Code：
+
+```bash
+cc-switch list
+cc-switch current
+cc-switch use deepseek
+cc-switch next
+cc-switch doctor
+```
+
+Codex：
+
+```bash
+cc-switch cx list
+cc-switch cx current
+cc-switch cx use openai
+cc-switch cx next
+```
+
+## 构建与验证
 
 在仓库根目录执行：
 
 ```bash
 cargo build --release
+cargo fmt
+cargo clippy --all-targets --all-features -- -D warnings
+cargo test
 ```
 
 生成的单文件可执行程序位于：
 
 - Linux/macOS: `target/release/cc-switch`
 - Windows: `target\\release\\cc-switch.exe`
-
-如果要全局使用，把该文件复制到你的 `PATH` 即可。
-
-在 macOS/Linux 上，也可以用符号链接放到常见的用户 `bin` 目录，例如：
-
-```bash
-mkdir -p ~/.local/bin
-ln -sf "$(pwd)/target/release/cc-switch" ~/.local/bin/cc-switch
-```
-
-确认 `~/.local/bin` 已在 `PATH` 中即可。Windows 请继续使用复制 `cc-switch.exe` 到 `PATH` 目录的方式。
-
-## 初始化 profile
-
-仓库 `profiles/` 目录中提供了三个示例模板：
-
-| 模板文件 | 用途 |
-|---|---|
-| `profiles/official.template.json` | 官方 Anthropic API（空 profile，不设任何 env） |
-| `profiles/deepseek.template.json` | DeepSeek 中转，替换模型和 base URL |
-| `profiles/local-test.template.json` | 本地/离线测试，禁用非必要网络请求 |
-
-### 使用方式
-
-将需要的模板文件复制到运行时 `profiles/` 目录，**去掉文件名中的 `.template`**，即可被 `cc-switch list` 识别。
-
-**Linux / macOS：**
-
-```bash
-# 首次使用时，确保目录存在
-mkdir -p ~/.cc-switch-simple/profiles
-
-# 从仓库复制模板（去掉 .template）
-cp profiles/official.template.json ~/.cc-switch-simple/profiles/official.json
-cp profiles/deepseek.template.json ~/.cc-switch-simple/profiles/deepseek.json
-cp profiles/local-test.template.json ~/.cc-switch-simple/profiles/local-test.json
-```
-
-**Windows（PowerShell）：**
-
-```powershell
-# 运行时目录为 %APPDATA%\cc-switch-simple\profiles
-# 即 C:\Users\<用户名>\AppData\Roaming\cc-switch-simple\profiles
-
-mkdir -Force "$env:APPDATA\cc-switch-simple\profiles"
-
-Copy-Item profiles\official.template.json "$env:APPDATA\cc-switch-simple\profiles\official.json"
-Copy-Item profiles\deepseek.template.json "$env:APPDATA\cc-switch-simple\profiles\deepseek.json"
-```
-
-> 提示：`deepseek.template.json` 中的 `ANTHROPIC_AUTH_TOKEN` 字段值为 `sk-填这里`，使用前请替换为你的实际 API Key。
-
-## 使用
-
-列出 profile：
-
-```bash
-cc-switch list
-```
-
-查看当前配置匹配到的 profile：
-
-```bash
-cc-switch current
-```
-
-切换到指定 profile：
-
-```bash
-cc-switch use deepseek
-```
-
-切换到下一个 profile：
-
-```bash
-cc-switch next
-```
-
-检查目录、配置路径和 JSON 有效性：
-
-```bash
-cc-switch doctor
-```
-
-## 测试
-
-```bash
-cargo test
-```
-
-当前基础测试覆盖：
-
-- profile 列表排序
-- `next` 轮换逻辑
-- 备份文件名生成
-- 路径解析与 `config.toml` 读取
 
 ## 约束
 
@@ -182,8 +209,3 @@ cargo test
 ## 社区
 
 有问题、建议，或想一起折腾？欢迎来 **[linux.do](https://linux.do/t/topic/2279788)** 社区交流反馈。
-<!-- 如果建了专门的帖子，把上面的链接换成帖子地址 -->
-
-## 备注
-
-这个版本不再保留原来的 Bash 安装脚本和 shell 补全安装逻辑。先把核心 CLI 稳定下来，后续再决定是否补安装器、打包或更复杂交互。

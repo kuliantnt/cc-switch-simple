@@ -31,6 +31,23 @@ pub enum Commands {
     Use { name: String },
     /// 按文件名排序轮换到下一个 profile（先备份再写入）。
     Next,
+    /// 切换 Codex 预设（`config.toml` + `auth.json`）。
+    Cx {
+        #[command(subcommand)]
+        command: CodexCommands,
+    },
     /// 诊断：检查运行时目录、配置路径、JSON 有效性。
     Doctor,
+}
+
+#[derive(Debug, Subcommand)]
+pub enum CodexCommands {
+    /// 列出所有可用的 Codex 预设。
+    List,
+    /// 显示当前选中的 Codex 预设。
+    Current,
+    /// 切换到指定名称的 Codex 预设（同时写入 `config.toml` 和 `auth.json`）。
+    Use { name: String },
+    /// 按名称排序轮换到下一个 Codex 预设。
+    Next,
 }

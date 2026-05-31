@@ -9,12 +9,18 @@
 //! | `profiles_dir` | profile JSON 存放目录 |
 //! | `backups_dir` | 自动备份目录 |
 //! | `target_settings_path` | Claude Code 的 `settings.json` |
+//! | `codex_profiles_dir` | Codex 预设目录 |
+//! | `codex_current_path` | 当前选择的 Codex profile 记录文件 |
+//! | `codex_backups_dir` | Codex 自动备份目录 |
+//! | `codex_target_config_path` | Codex 当前生效的 `config.toml` |
+//! | `codex_target_auth_path` | Codex 当前生效的 `auth.json` |
 //!
 //! 路径解析规则（`resolve_user_path`）：
 //! 1. `~` 或 `~/...` → 相对于用户 home 目录
 //! 2. 绝对路径 → 直接使用
 //! 3. 相对路径 → 相对于 `config_dir` 解析
 
+use std::ffi::OsStr;
 use std::fs;
 use std::path::{Path, PathBuf};
 
@@ -38,6 +44,16 @@ pub struct ResolvedPaths {
     pub backups_dir: PathBuf,
     /// Claude Code 目标 `settings.json` 路径。
     pub target_settings_path: PathBuf,
+    /// Codex 预设目录。
+    pub codex_profiles_dir: PathBuf,
+    /// 当前选择的 Codex profile 记录文件。
+    pub codex_current_path: PathBuf,
+    /// Codex 自动备份目录。
+    pub codex_backups_dir: PathBuf,
+    /// Codex 当前生效的 `config.toml` 路径。
+    pub codex_target_config_path: PathBuf,
+    /// Codex 当前生效的 `auth.json` 路径。
+    pub codex_target_auth_path: PathBuf,
     /// 自动备份最多保留多少个文件。
     pub max_backup_files: usize,
 }
@@ -46,6 +62,16 @@ impl ResolvedPaths {
     /// 根据 profile 名称构造对应的 JSON 文件路径。
     pub fn profile_path(&self, name: &str) -> PathBuf {
         self.profiles_dir.join(format!("{name}.json"))
+    }
+
+    /// 根据 Codex profile 名称构造对应的 `config.toml` 路径。
+    pub fn codex_profile_path(&self, name: &str) -> PathBuf {
+        self.codex_profiles_dir.join(name).join("config.toml")
+    }
+
+    /// 根据 Codex profile 名称构造对应的 `auth.json` 路径。
+    pub fn codex_auth_path(&self, name: &str) -> PathBuf {
+        self.codex_profiles_dir.join(name).join("auth.json")
     }
 }
 
@@ -79,6 +105,13 @@ impl PathResolver {
         let config_dir = default_config_dir(&self.base_dirs);
         let config_file_path = config_dir.join("config.toml");
         let app_config = load_config(&config_file_path)?;
+        let codex_profiles_dir = config_dir.join("codex");
+        let codex_current_path = codex_profiles_dir.join("current");
+        let codex_backups_dir = config_dir.join("backups").join("codex");
+        let codex_home_dir =
+            resolve_codex_home_dir(self.base_dirs.home_dir(), std::env::var_os("CODEX_HOME"))?;
+        let codex_target_config_path = codex_home_dir.join("config.toml");
+        let codex_target_auth_path = codex_home_dir.join("auth.json");
 
         let default_target = default_target_settings_path(&self.base_dirs);
         let target_settings_path = match app_config.target_settings_path {
@@ -95,6 +128,11 @@ impl PathResolver {
             config_dir,
             config_file_path,
             target_settings_path,
+            codex_profiles_dir,
+            codex_current_path,
+            codex_backups_dir,
+            codex_target_config_path,
+            codex_target_auth_path,
             max_backup_files,
         })
     }
@@ -119,6 +157,48 @@ pub fn default_config_dir(base_dirs: &BaseDirs) -> PathBuf {
 /// Claude Code 默认目标配置文件路径：`~/.claude/settings.json`。
 pub fn default_target_settings_path(base_dirs: &BaseDirs) -> PathBuf {
     base_dirs.home_dir().join(".claude").join("settings.json")
+}
+
+/// Codex 预设目录：`~/.cc-switch-simple/codex`。
+pub fn default_codex_profiles_dir(base_dirs: &BaseDirs) -> PathBuf {
+    default_config_dir(base_dirs).join("codex")
+}
+
+/// Codex 备份目录：`~/.cc-switch-simple/backups/codex`。
+pub fn default_codex_backups_dir(base_dirs: &BaseDirs) -> PathBuf {
+    default_config_dir(base_dirs).join("backups").join("codex")
+}
+
+/// 解析 Codex 的 home 目录。
+///
+/// 优先使用 `CODEX_HOME`，否则回退到 `~/.codex`。
+pub fn resolve_codex_home_dir(
+    home_dir: &Path,
+    override_value: Option<impl AsRef<OsStr>>,
+) -> Result<PathBuf> {
+    match override_value {
+        Some(value) => {
+            let raw = PathBuf::from(value.as_ref());
+            if raw.as_os_str().is_empty() {
+                bail!("CODEX_HOME cannot be empty");
+            }
+
+            if raw.as_os_str() == OsStr::new("~") {
+                return Ok(home_dir.to_path_buf());
+            }
+
+            let raw_text = raw.to_string_lossy();
+            if let Some(rest) = raw_text
+                .strip_prefix("~/")
+                .or_else(|| raw_text.strip_prefix("~\\"))
+            {
+                return Ok(home_dir.join(rest));
+            }
+
+            Ok(raw)
+        }
+        None => Ok(home_dir.join(".codex")),
+    }
 }
 
 /// 加载 `config.toml`。文件不存在时返回默认空配置，不报错。

@@ -26,6 +26,7 @@
 //! 不会损坏目标 `settings.json`。
 
 mod cli;
+mod codex;
 mod config;
 pub mod paths;
 
@@ -39,7 +40,11 @@ use clap::Parser;
 use serde_json::Value;
 use time::OffsetDateTime;
 
-pub use cli::{Cli, Commands};
+pub use cli::{Cli, CodexCommands, Commands};
+pub use codex::{
+    CodexProfileEntry, collect_codex_profiles, list_codex_profiles, read_codex_current_name,
+    show_codex_current, use_codex_profile, use_next_codex_profile,
+};
 pub use config::{AppConfig, ConfigFile};
 pub use paths::{PathResolver, ResolvedPaths};
 
@@ -53,6 +58,12 @@ pub fn run() -> Result<()> {
         Commands::Current => show_current(&paths),
         Commands::Use { name } => use_profile(&paths, &name),
         Commands::Next => use_next_profile(&paths),
+        Commands::Cx { command } => match command {
+            CodexCommands::List => list_codex_profiles(&paths),
+            CodexCommands::Current => show_codex_current(&paths),
+            CodexCommands::Use { name } => use_codex_profile(&paths, &name),
+            CodexCommands::Next => use_next_codex_profile(&paths),
+        },
         Commands::Doctor => doctor(&paths),
     }
 }
@@ -168,8 +179,8 @@ pub fn use_next_profile(paths: &ResolvedPaths) -> Result<()> {
         .map(|index| profiles[index].name.as_str())
         .unwrap_or("unknown");
 
+    println!("Current: {}", next_profile.name);
     println!("Before: {}", before);
-    println!("After: {}", next_profile.name);
 
     if paths.target_settings_path.is_file() {
         let backup_path = create_backup(
@@ -357,10 +368,10 @@ pub fn detect_current_profile_index(
 
     let current = canonical_json_from_file(&paths.target_settings_path)?;
     for (index, profile) in profiles.iter().enumerate() {
-        if let Ok(candidate) = canonical_json_from_file(&profile.path) {
-            if candidate == current {
-                return Ok(Some(index));
-            }
+        if let Ok(candidate) = canonical_json_from_file(&profile.path)
+            && candidate == current
+        {
+            return Ok(Some(index));
         }
     }
 
@@ -509,7 +520,7 @@ pub fn ensure_runtime_dirs(paths: &ResolvedPaths) -> Result<()> {
 /// 规则：
 /// - 不能为空
 /// - 不能以 `.` 开头（防止隐藏文件）
-/// - 只能包含 ASCII 字母数字、`.`、`_`、`-`
+/// - 只能包含字母数字、`.`、`_`、`-`
 pub fn validate_profile_name(name: &str) -> Result<()> {
     if name.is_empty() {
         bail!("Profile name cannot be empty");
@@ -521,7 +532,7 @@ pub fn validate_profile_name(name: &str) -> Result<()> {
 
     if !name
         .chars()
-        .all(|ch| ch.is_ascii_alphanumeric() || matches!(ch, '.' | '_' | '-'))
+        .all(|ch| ch.is_alphanumeric() || matches!(ch, '.' | '_' | '-'))
     {
         bail!("Invalid profile name: {name}");
     }
@@ -547,6 +558,10 @@ pub fn write_profile_to_target(source: &Path, target: &Path) -> Result<()> {
     // 写入前验证 JSON 有效性
     canonical_json_from_slice(&content)?;
 
+    write_bytes_to_target(&content, target)
+}
+
+pub(crate) fn write_bytes_to_target(content: &[u8], target: &Path) -> Result<()> {
     let target_parent = target
         .parent()
         .ok_or_else(|| anyhow!("Target settings path has no parent directory"))?;
@@ -561,7 +576,7 @@ pub fn write_profile_to_target(source: &Path, target: &Path) -> Result<()> {
     let temp_name = format!(".cc-switch-{}-{nonce}.tmp", std::process::id());
     let temp_path = target_parent.join(temp_name);
 
-    fs::write(&temp_path, &content)
+    fs::write(&temp_path, content)
         .with_context(|| format!("Failed to write {}", temp_path.display()))?;
 
     // Unix 上确保 settings.json 权限为 0600（可能含 API key）

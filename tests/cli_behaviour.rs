@@ -70,7 +70,14 @@ fn create_backup_prunes_old_backups_and_keeps_latest_five() {
 
     let mut names = fs::read_dir(&sandbox.paths.backups_dir)
         .unwrap()
-        .map(|entry| entry.unwrap().file_name().into_string().unwrap())
+        .filter_map(|entry| {
+            let entry = entry.unwrap();
+            entry
+                .file_type()
+                .unwrap()
+                .is_file()
+                .then(|| entry.file_name().into_string().unwrap())
+        })
         .collect::<Vec<_>>();
     names.sort();
 
@@ -114,11 +121,20 @@ impl Sandbox {
         let config_dir = temp_dir.path().join(".cc-switch-simple");
         let profiles_dir = config_dir.join("profiles");
         let backups_dir = config_dir.join("backups");
+        let codex_root = temp_dir.path().join(".cc-switch-simple");
+        let codex_profiles_dir = codex_root.join("codex");
+        let codex_backups_dir = codex_root.join("backups").join("codex");
         let target_settings_path = temp_dir.path().join(".claude").join("settings.json");
+        let codex_target_dir = temp_dir.path().join(".codex");
+        let codex_target_config_path = codex_target_dir.join("config.toml");
+        let codex_target_auth_path = codex_target_dir.join("auth.json");
 
         fs::create_dir_all(&profiles_dir).unwrap();
         fs::create_dir_all(&backups_dir).unwrap();
+        fs::create_dir_all(&codex_profiles_dir).unwrap();
+        fs::create_dir_all(&codex_backups_dir).unwrap();
         fs::create_dir_all(target_settings_path.parent().unwrap()).unwrap();
+        fs::create_dir_all(&codex_target_dir).unwrap();
 
         Self {
             paths: ResolvedPaths {
@@ -127,6 +143,11 @@ impl Sandbox {
                 profiles_dir,
                 backups_dir,
                 target_settings_path,
+                codex_profiles_dir: codex_profiles_dir.clone(),
+                codex_current_path: codex_profiles_dir.join("current"),
+                codex_backups_dir,
+                codex_target_config_path,
+                codex_target_auth_path,
                 max_backup_files: 5,
             },
             _temp_dir: temp_dir,

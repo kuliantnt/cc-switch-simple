@@ -4,16 +4,21 @@
 
 # cc-switch
 
-`cc-switch` is now a Rust-based cross-platform CLI for switching Claude Code configuration profiles.
+`cc-switch` is a Rust-based cross-platform CLI with two switching modes:
 
-The scope is intentionally small:
+- Claude Code JSON profile switching
+- Codex `config.toml` preset switching
 
-- manage JSON profiles
-- write a selected profile into Claude Code's target settings file
-- back up the current settings before every switch
+The tool stays intentionally small:
+
+- overwrite the target config from local presets
+- create a backup before every overwrite
+- avoid printing sensitive values
 - ship as a single executable on Windows, macOS, and Linux
 
 ## Commands
+
+Claude Code:
 
 ```text
 cc-switch list
@@ -23,25 +28,33 @@ cc-switch next
 cc-switch doctor
 ```
 
+Codex:
+
+```text
+cc-switch cx list
+cc-switch cx current
+cc-switch cx use <name>
+cc-switch cx next
+```
+
 Behavior:
 
-- profiles are sorted by filename
-- `list` marks the matched active profile with `*`
-- `current` matches the target settings file against saved profiles by canonical JSON content
-- `use` and `next` always back up the current target settings before writing
-- `next` falls back to the first profile when the current settings cannot be matched
+- Claude profiles are sorted by filename and matched by canonical JSON content
+- Codex profiles are sorted by directory name and tracked via `~/.cc-switch-simple/codex/current`
+- `use` and `next` always back up the current target file before overwrite
+- `next` falls back to the first profile when the current selection is missing or unknown
 
 ## Runtime Layout
 
-Runtime config directory:
+Claude Code runtime directory:
 
 - Linux/macOS: `~/.cc-switch-simple/`
 - Windows: `cc-switch-simple/` under the user's config directory
 
-Inside that directory:
+Inside it:
 
-- `profiles/` stores profile JSON files
-- `backups/` stores automatic backups
+- `profiles/` stores Claude JSON profiles
+- `backups/` stores Claude backups
 - `config.toml` is optional
 
 Default Claude Code target path:
@@ -62,116 +75,122 @@ Notes:
 
 - `[backups].max_files` defaults to `5`
 - `max_files` must be greater than `0`
-- Relative `settings_path` values are resolved from the runtime config directory
+- it applies to both Claude and Codex backup retention; for Codex, `config.toml` and `auth.json` each keep up to `max_files` backups
+- relative `settings_path` values are resolved from the runtime config directory
 
-## Build
+Codex runtime paths are fixed:
+
+- preset config: `~/.cc-switch-simple/codex/<name>/config.toml`
+- preset auth: `~/.cc-switch-simple/codex/<name>/auth.json`
+- current selection record: `~/.cc-switch-simple/codex/current`
+- backup directory: `~/.cc-switch-simple/backups/codex/`
+- active config: `${CODEX_HOME:-$HOME/.codex}/config.toml`
+- active auth: `${CODEX_HOME:-$HOME/.codex}/auth.json`
+
+Codex mode switches both files together:
+
+- the selected preset must contain both `config.toml` and `auth.json`
+- existing target files are backed up before overwrite
+- `cc-switch` does not print API keys or token values
+
+## Claude Profile Setup
+
+The repo still ships example templates in `profiles/`:
+
+- `profiles/official.template.json`
+- `profiles/deepseek.template.json`
+- `profiles/local-test.template.json`
+
+Copy them into the runtime directory and drop the `.template` suffix:
+
+```bash
+mkdir -p ~/.cc-switch-simple/profiles
+cp profiles/official.template.json ~/.cc-switch-simple/profiles/official.json
+cp profiles/deepseek.template.json ~/.cc-switch-simple/profiles/deepseek.json
+cp profiles/local-test.template.json ~/.cc-switch-simple/profiles/local-test.json
+```
+
+## Codex Preset Setup
+
+Create two example presets:
+
+```bash
+mkdir -p ~/.cc-switch-simple/codex/openai
+mkdir -p ~/.cc-switch-simple/codex/xxxcom
+```
+
+`~/.cc-switch-simple/codex/openai/config.toml`:
+
+```toml
+model = "gpt-5"
+model_provider = "openai"
+approval_policy = "on-request"
+sandbox_mode = "workspace-write"
+```
+
+`~/.cc-switch-simple/codex/openai/auth.json`:
+
+```json
+{
+  "OPENAI_API_KEY": "<redacted>"
+}
+```
+
+`~/.cc-switch-simple/codex/xxxcom/config.toml`:
+
+```toml
+model = "gpt-5"
+model_provider = "xxxcom"
+approval_policy = "on-request"
+sandbox_mode = "workspace-write"
+```
+
+`~/.cc-switch-simple/codex/xxxcom/auth.json`:
+
+```json
+{
+  "XXXCOM_API_KEY": "<redacted>"
+}
+```
+
+When switching, `cc-switch` backs up and overwrites both `${CODEX_HOME:-$HOME/.codex}/config.toml` and `${CODEX_HOME:-$HOME/.codex}/auth.json`.
+
+## Usage
+
+Claude Code:
+
+```bash
+cc-switch list
+cc-switch current
+cc-switch use deepseek
+cc-switch next
+cc-switch doctor
+```
+
+Codex:
+
+```bash
+cc-switch cx list
+cc-switch cx current
+cc-switch cx use openai
+cc-switch cx next
+```
+
+## Build And Verify
 
 Run from the repository root:
 
 ```bash
 cargo build --release
+cargo fmt
+cargo clippy --all-targets --all-features -- -D warnings
+cargo test
 ```
 
 The single executable will be generated at:
 
 - Linux/macOS: `target/release/cc-switch`
 - Windows: `target\\release\\cc-switch.exe`
-
-Copy that file into your `PATH` if you want a global install.
-
-On macOS/Linux, you can also symlink it into a common user `bin` directory:
-
-```bash
-mkdir -p ~/.local/bin
-ln -sf "$(pwd)/target/release/cc-switch" ~/.local/bin/cc-switch
-```
-
-Make sure `~/.local/bin` is already in your `PATH`. On Windows, keep using the `cc-switch.exe` copy-to-`PATH` approach.
-
-## Bootstrapping Profiles
-
-The repo ships three example templates under `profiles/`:
-
-| Template | Purpose |
-|---|---|
-| `profiles/official.template.json` | Official Anthropic API (empty profile, no env override) |
-| `profiles/deepseek.template.json` | DeepSeek proxy — overrides model and base URL |
-| `profiles/local-test.template.json` | Local/offline testing — disables non-essential network requests |
-
-### Setup
-
-Copy the templates you need into the runtime `profiles/` directory, **removing the `.template` suffix** from each filename. They will be recognized by `cc-switch list` immediately.
-
-**Linux / macOS:**
-
-```bash
-# ensure the directory exists (first-time setup)
-mkdir -p ~/.cc-switch-simple/profiles
-
-# copy templates (drop .template)
-cp profiles/official.template.json ~/.cc-switch-simple/profiles/official.json
-cp profiles/deepseek.template.json ~/.cc-switch-simple/profiles/deepseek.json
-cp profiles/local-test.template.json ~/.cc-switch-simple/profiles/local-test.json
-```
-
-**Windows (PowerShell):**
-
-```powershell
-# runtime path: %APPDATA%\cc-switch-simple\profiles
-# resolves to C:\Users\<user>\AppData\Roaming\cc-switch-simple\profiles
-
-mkdir -Force "$env:APPDATA\cc-switch-simple\profiles"
-
-Copy-Item profiles\official.template.json "$env:APPDATA\cc-switch-simple\profiles\official.json"
-Copy-Item profiles\deepseek.template.json "$env:APPDATA\cc-switch-simple\profiles\deepseek.json"
-```
-
-> Note: `deepseek.template.json` contains a placeholder `ANTHROPIC_AUTH_TOKEN` value (`sk-填这里`). Replace it with your actual API key before use.
-
-## Usage
-
-List available profiles:
-
-```bash
-cc-switch list
-```
-
-Show the currently matched profile:
-
-```bash
-cc-switch current
-```
-
-Switch to a named profile:
-
-```bash
-cc-switch use deepseek
-```
-
-Rotate to the next profile:
-
-```bash
-cc-switch next
-```
-
-Check directories, config paths, and JSON validity:
-
-```bash
-cc-switch doctor
-```
-
-## Tests
-
-```bash
-cargo test
-```
-
-Current baseline coverage includes:
-
-- profile listing order
-- `next` rotation behavior
-- backup filename generation
-- path resolution and `config.toml` parsing
 
 ## Constraints
 
@@ -182,7 +201,3 @@ Current baseline coverage includes:
 ## Community
 
 Questions, suggestions, or want to help out? Join the conversation at **[linux.do](https://linux.do/t/topic/2279788)**.
-
-## Notes
-
-This version intentionally drops the old Bash installer and shell-completion installation flow. The priority is a stable core CLI first; packaging and richer UX can be added later if needed.
