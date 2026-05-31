@@ -1,3 +1,12 @@
+//! CLI 参数定义（clap derive 模式）。
+//!
+//! 子命令：
+//! - `list`    列出所有可用 profile，当前匹配到的用 `*` 标记
+//! - `current` 显示当前目标配置文件匹配到的 profile 名称
+//! - `use`     切换到指定名称的 profile
+//! - `next`    按文件名排序轮换到下一个 profile
+//! - `doctor`  诊断：检查目录、配置路径、JSON 有效性
+
 use clap::{Parser, Subcommand};
 
 #[derive(Debug, Parser)]
@@ -14,14 +23,14 @@ pub struct Cli {
 
 #[derive(Debug, Subcommand)]
 pub enum Commands {
-    /// List available profiles.
+    /// 列出所有可用 profile，当前匹配到的用 `*` 标记。
     List,
-    /// Show the current profile matched against the target settings file.
+    /// 显示目标配置文件当前匹配的 profile 名称。
     Current,
-    /// Switch to a named profile.
+    /// 切换到指定名称的 profile（先备份再写入）。
     Use { name: String },
-    /// Rotate to the next profile in filename order.
+    /// 按文件名排序轮换到下一个 profile（先备份再写入）。
     Next,
-    /// Validate paths, directories, and target settings state.
+    /// 诊断：检查运行时目录、配置路径、JSON 有效性。
     Doctor,
 }
