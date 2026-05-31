@@ -53,9 +53,16 @@ Claude Code 默认目标配置路径：
 ```toml
 [claude]
 settings_path = "~/.claude/settings.json"
+
+[backups]
+max_files = 5
 ```
 
-如果 `settings_path` 是相对路径，会相对 `config.toml` 所在目录解析。
+说明：
+
+- `[backups].max_files` 默认是 `5`
+- `max_files` 必须大于 `0`
+- 如果 `settings_path` 是相对路径，会相对 `config.toml` 所在目录解析
 
 ## 构建与安装
 

@@ -1,7 +1,7 @@
 use std::fs;
 
 use cc_switch::{
-    ResolvedPaths, backup_file_name, collect_profiles, detect_current_profile_index,
+    ResolvedPaths, backup_file_name, collect_profiles, create_backup, detect_current_profile_index,
     next_profile_index,
 };
 use tempfile::TempDir;
@@ -47,6 +47,46 @@ fn backup_file_name_uses_timestamp_and_suffix() {
 }
 
 #[test]
+fn create_backup_prunes_old_backups_and_keeps_latest_five() {
+    let sandbox = Sandbox::new();
+    fs::write(&sandbox.paths.target_settings_path, r#"{"active":true}"#).unwrap();
+
+    for name in [
+        "settings-20260531-134500.json",
+        "settings-20260531-134501.json",
+        "settings-20260531-134502.json",
+        "settings-20260531-134503.json",
+        "settings-20260531-134504.json",
+    ] {
+        fs::write(sandbox.paths.backups_dir.join(name), r#"{"old":true}"#).unwrap();
+    }
+
+    let backup_path = create_backup(&sandbox.paths, datetime!(2026-05-31 13:45:05 +08:00)).unwrap();
+
+    assert_eq!(
+        backup_path.file_name().and_then(|name| name.to_str()),
+        Some("settings-20260531-134505.json")
+    );
+
+    let mut names = fs::read_dir(&sandbox.paths.backups_dir)
+        .unwrap()
+        .map(|entry| entry.unwrap().file_name().into_string().unwrap())
+        .collect::<Vec<_>>();
+    names.sort();
+
+    assert_eq!(
+        names,
+        vec![
+            "settings-20260531-134501.json",
+            "settings-20260531-134502.json",
+            "settings-20260531-134503.json",
+            "settings-20260531-134504.json",
+            "settings-20260531-134505.json",
+        ]
+    );
+}
+
+#[test]
 fn detect_current_profile_index_matches_canonical_json() {
     let sandbox = Sandbox::new();
     sandbox.write_profile("official", r#"{"env":{"A":1,"B":2},"mcp":["a","b"]}"#);
@@ -87,6 +127,7 @@ impl Sandbox {
                 profiles_dir,
                 backups_dir,
                 target_settings_path,
+                max_backup_files: 5,
             },
             _temp_dir: temp_dir,
         }

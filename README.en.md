@@ -53,9 +53,16 @@ You can override it in `config.toml`:
 ```toml
 [claude]
 settings_path = "~/.claude/settings.json"
+
+[backups]
+max_files = 5
 ```
 
-Relative `settings_path` values are resolved from the runtime config directory.
+Notes:
+
+- `[backups].max_files` defaults to `5`
+- `max_files` must be greater than `0`
+- Relative `settings_path` values are resolved from the runtime config directory
 
 ## Build
 

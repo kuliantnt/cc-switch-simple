@@ -18,10 +18,12 @@
 use std::fs;
 use std::path::{Path, PathBuf};
 
-use anyhow::{Context, Result, anyhow};
+use anyhow::{Context, Result, anyhow, bail};
 use directories::BaseDirs;
 
 use crate::{AppConfig, ConfigFile};
+
+pub const DEFAULT_MAX_BACKUP_FILES: usize = 5;
 
 /// 一次解析得到的全部运行时路径。
 #[derive(Debug, Clone)]
@@ -36,6 +38,8 @@ pub struct ResolvedPaths {
     pub backups_dir: PathBuf,
     /// Claude Code 目标 `settings.json` 路径。
     pub target_settings_path: PathBuf,
+    /// 自动备份最多保留多少个文件。
+    pub max_backup_files: usize,
 }
 
 impl ResolvedPaths {
@@ -81,6 +85,9 @@ impl PathResolver {
             Some(path) => resolve_user_path(&path, &config_dir, self.base_dirs.home_dir())?,
             None => default_target,
         };
+        let max_backup_files = app_config
+            .max_backup_files
+            .unwrap_or(DEFAULT_MAX_BACKUP_FILES);
 
         Ok(ResolvedPaths {
             profiles_dir: config_dir.join("profiles"),
@@ -88,6 +95,7 @@ impl PathResolver {
             config_dir,
             config_file_path,
             target_settings_path,
+            max_backup_files,
         })
     }
 }
@@ -118,6 +126,7 @@ pub fn load_config(path: &Path) -> Result<AppConfig> {
     if !path.is_file() {
         return Ok(AppConfig {
             target_settings_path: None,
+            max_backup_files: None,
         });
     }
 
@@ -125,7 +134,11 @@ pub fn load_config(path: &Path) -> Result<AppConfig> {
         fs::read_to_string(path).with_context(|| format!("Failed to read {}", path.display()))?;
     let file: ConfigFile =
         toml::from_str(&raw).with_context(|| format!("Failed to parse {}", path.display()))?;
-    Ok(file.into())
+    let app_config: AppConfig = file.into();
+    if matches!(app_config.max_backup_files, Some(0)) {
+        bail!("Configured backups.max_files must be greater than 0");
+    }
+    Ok(app_config)
 }
 
 /// 解析用户在 `config.toml` 中指定的路径。

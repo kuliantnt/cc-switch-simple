@@ -403,8 +403,39 @@ pub fn create_backup(paths: &ResolvedPaths, now: OffsetDateTime) -> Result<PathB
                 path.display()
             )
         })?;
+        prune_backups(paths, paths.max_backup_files)?;
         return Ok(path);
     }
+}
+
+/// 清理旧备份，仅保留最近 `keep` 个工具生成的备份文件。
+fn prune_backups(paths: &ResolvedPaths, keep: usize) -> Result<()> {
+    let mut backups = fs::read_dir(&paths.backups_dir)
+        .with_context(|| format!("Failed to read {}", paths.backups_dir.display()))?
+        .filter_map(|entry| {
+            let entry = entry.ok()?;
+            if !entry.file_type().ok()?.is_file() {
+                return None;
+            }
+
+            let file_name = entry.file_name();
+            let file_name = file_name.to_str()?;
+            let key = parse_backup_sort_key(file_name)?;
+            Some((key, entry.path()))
+        })
+        .collect::<Vec<_>>();
+
+    if backups.len() <= keep {
+        return Ok(());
+    }
+
+    backups.sort_by(|a, b| b.0.cmp(&a.0));
+    for (_, path) in backups.into_iter().skip(keep) {
+        fs::remove_file(&path)
+            .with_context(|| format!("Failed to remove old backup {}", path.display()))?;
+    }
+
+    Ok(())
 }
 
 /// 生成备份文件名。
@@ -422,6 +453,31 @@ pub fn backup_file_name(now: OffsetDateTime, suffix: u32) -> Result<String> {
     } else {
         Ok(format!("settings-{stamp}-{suffix}.json"))
     }
+}
+
+fn parse_backup_sort_key(file_name: &str) -> Option<(String, u32)> {
+    let stem = file_name.strip_prefix("settings-")?.strip_suffix(".json")?;
+    let (stamp, suffix) = match stem.rsplit_once('-') {
+        Some((prefix, raw_suffix))
+            if prefix.len() == 15 && raw_suffix.chars().all(|ch| ch.is_ascii_digit()) =>
+        {
+            (prefix, raw_suffix.parse().ok()?)
+        }
+        _ if stem.len() == 15 => (stem, 0),
+        _ => return None,
+    };
+
+    if !stamp.chars().enumerate().all(|(index, ch)| {
+        if index == 8 {
+            ch == '-'
+        } else {
+            ch.is_ascii_digit()
+        }
+    }) {
+        return None;
+    }
+
+    Some((stamp.to_string(), suffix))
 }
 
 /// 计算下一个 profile 的索引。

@@ -47,6 +47,41 @@ settings_path = "~/Library/Application Support/Claude/settings.json"
         config.target_settings_path.as_deref(),
         Some("~/Library/Application Support/Claude/settings.json")
     );
+    assert_eq!(config.max_backup_files, None);
+}
+
+#[test]
+fn load_config_reads_backup_limit() {
+    let temp_dir = TempDir::new().unwrap();
+    let config_file = temp_dir.path().join("config.toml");
+    fs::write(
+        &config_file,
+        r#"
+[backups]
+max_files = 7
+"#,
+    )
+    .unwrap();
+
+    let config = load_config(&config_file).unwrap();
+    assert_eq!(config.max_backup_files, Some(7));
+}
+
+#[test]
+fn load_config_rejects_zero_backup_limit() {
+    let temp_dir = TempDir::new().unwrap();
+    let config_file = temp_dir.path().join("config.toml");
+    fs::write(
+        &config_file,
+        r#"
+[backups]
+max_files = 0
+"#,
+    )
+    .unwrap();
+
+    let error = load_config(&config_file).unwrap_err().to_string();
+    assert!(error.contains("backups.max_files must be greater than 0"));
 }
 
 #[test]
