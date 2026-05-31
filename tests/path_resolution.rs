@@ -97,8 +97,31 @@ fn default_target_settings_path_points_to_home_claude_dir() {
 #[test]
 fn default_codex_paths_point_to_cc_switch_simple_dir() {
     let base_dirs = BaseDirs::new().unwrap();
-    assert!(default_codex_profiles_dir(&base_dirs).ends_with(".cc-switch-simple/codex"));
-    assert!(default_codex_backups_dir(&base_dirs).ends_with(".cc-switch-simple/backups/codex"));
+    let profiles_dir = default_codex_profiles_dir(&base_dirs);
+    let backups_dir = default_codex_backups_dir(&base_dirs);
+
+    assert_eq!(
+        profiles_dir.file_name().and_then(|name| name.to_str()),
+        Some("codex")
+    );
+    assert!(matches!(
+        profiles_dir
+            .parent()
+            .and_then(|path| path.file_name())
+            .and_then(|name| name.to_str()),
+        Some(".cc-switch-simple" | "cc-switch-simple")
+    ));
+    assert_eq!(
+        backups_dir.file_name().and_then(|name| name.to_str()),
+        Some("codex")
+    );
+    assert_eq!(
+        backups_dir
+            .parent()
+            .and_then(|path| path.file_name())
+            .and_then(|name| name.to_str()),
+        Some("backups")
+    );
 }
 
 #[test]
