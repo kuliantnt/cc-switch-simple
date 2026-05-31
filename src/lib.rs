@@ -436,7 +436,7 @@ pub fn next_profile_index(current: Option<usize>, profile_count: usize) -> Optio
 
     Some(match current {
         Some(index) => (index + 1) % profile_count, // 循环轮换
-        None => 0, // 无法识别时回退到第一个
+        None => 0,                                  // 无法识别时回退到第一个
     })
 }
 
