@@ -83,16 +83,43 @@ ln -sf "$(pwd)/target/release/cc-switch" ~/.local/bin/cc-switch
 
 ## 初始化 profile
 
-仓库仍保留示例模板：
+仓库 `profiles/` 目录中提供了三个示例模板：
 
-- `profiles/official.template.json`
-- `profiles/deepseek.template.json`
-- `profiles/local-test.template.json`
+| 模板文件 | 用途 |
+|---|---|
+| `profiles/official.template.json` | 官方 Anthropic API（空 profile，不设任何 env） |
+| `profiles/deepseek.template.json` | DeepSeek 中转，替换模型和 base URL |
+| `profiles/local-test.template.json` | 本地/离线测试，禁用非必要网络请求 |
 
-可以手动复制到运行时目录的 `profiles/`，并去掉 `.template`：
+### 使用方式
 
-- `official.template.json` -> `official.json`
-- `deepseek.template.json` -> `deepseek.json`
+将需要的模板文件复制到运行时 `profiles/` 目录，**去掉文件名中的 `.template`**，即可被 `cc-switch list` 识别。
+
+**Linux / macOS：**
+
+```bash
+# 首次使用时，确保目录存在
+mkdir -p ~/.cc-switch-simple/profiles
+
+# 从仓库复制模板（去掉 .template）
+cp profiles/official.template.json ~/.cc-switch-simple/profiles/official.json
+cp profiles/deepseek.template.json ~/.cc-switch-simple/profiles/deepseek.json
+cp profiles/local-test.template.json ~/.cc-switch-simple/profiles/local-test.json
+```
+
+**Windows（PowerShell）：**
+
+```powershell
+# 运行时目录为 %APPDATA%\cc-switch-simple\profiles
+# 即 C:\Users\<用户名>\AppData\Roaming\cc-switch-simple\profiles
+
+mkdir -Force "$env:APPDATA\cc-switch-simple\profiles"
+
+Copy-Item profiles\official.template.json "$env:APPDATA\cc-switch-simple\profiles\official.json"
+Copy-Item profiles\deepseek.template.json "$env:APPDATA\cc-switch-simple\profiles\deepseek.json"
+```
+
+> 提示：`deepseek.template.json` 中的 `ANTHROPIC_AUTH_TOKEN` 字段值为 `sk-填这里`，使用前请替换为你的实际 API Key。
 
 ## 使用
 

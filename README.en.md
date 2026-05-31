@@ -83,16 +83,43 @@ Make sure `~/.local/bin` is already in your `PATH`. On Windows, keep using the `
 
 ## Bootstrapping Profiles
 
-The repository still ships example templates:
+The repo ships three example templates under `profiles/`:
 
-- `profiles/official.template.json`
-- `profiles/deepseek.template.json`
-- `profiles/local-test.template.json`
+| Template | Purpose |
+|---|---|
+| `profiles/official.template.json` | Official Anthropic API (empty profile, no env override) |
+| `profiles/deepseek.template.json` | DeepSeek proxy — overrides model and base URL |
+| `profiles/local-test.template.json` | Local/offline testing — disables non-essential network requests |
 
-Copy them into your runtime `profiles/` directory and remove the `.template` suffix:
+### Setup
 
-- `official.template.json` -> `official.json`
-- `deepseek.template.json` -> `deepseek.json`
+Copy the templates you need into the runtime `profiles/` directory, **removing the `.template` suffix** from each filename. They will be recognized by `cc-switch list` immediately.
+
+**Linux / macOS:**
+
+```bash
+# ensure the directory exists (first-time setup)
+mkdir -p ~/.cc-switch-simple/profiles
+
+# copy templates (drop .template)
+cp profiles/official.template.json ~/.cc-switch-simple/profiles/official.json
+cp profiles/deepseek.template.json ~/.cc-switch-simple/profiles/deepseek.json
+cp profiles/local-test.template.json ~/.cc-switch-simple/profiles/local-test.json
+```
+
+**Windows (PowerShell):**
+
+```powershell
+# runtime path: %APPDATA%\cc-switch-simple\profiles
+# resolves to C:\Users\<user>\AppData\Roaming\cc-switch-simple\profiles
+
+mkdir -Force "$env:APPDATA\cc-switch-simple\profiles"
+
+Copy-Item profiles\official.template.json "$env:APPDATA\cc-switch-simple\profiles\official.json"
+Copy-Item profiles\deepseek.template.json "$env:APPDATA\cc-switch-simple\profiles\deepseek.json"
+```
+
+> Note: `deepseek.template.json` contains a placeholder `ANTHROPIC_AUTH_TOKEN` value (`sk-填这里`). Replace it with your actual API key before use.
 
 ## Usage
 
@@ -144,6 +171,10 @@ Current baseline coverage includes:
 - no Python, Node, Bash, or Zsh dependency
 - single-binary distribution
 - uses `clap`, `serde`, `toml`, `directories`, and `anyhow`
+
+## Community
+
+Questions, suggestions, or want to help out? Join the conversation at **[linux.do](https://linux.do/t/topic/2279788)**.
 
 ## Notes
 
