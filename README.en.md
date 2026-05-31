@@ -122,14 +122,25 @@ cp profiles/local-test.template.json ~/.cc-switch-simple/profiles/local-test.jso
 
 ## Codex Preset Setup
 
-Create the preset directories first:
+The repo also ships copy-ready Codex preset examples in `codex/`:
+
+- `codex/openai/config.toml`
+- `codex/openai/auth.json`
+- `codex/xxxcom/config.toml`
+- `codex/xxxcom/auth.json`
+
+Create the preset directories, then copy the examples over:
 
 ```bash
 mkdir -p ~/.cc-switch-simple/codex/openai
 mkdir -p ~/.cc-switch-simple/codex/xxxcom
+cp codex/openai/config.toml ~/.cc-switch-simple/codex/openai/config.toml
+cp codex/openai/auth.json ~/.cc-switch-simple/codex/openai/auth.json
+cp codex/xxxcom/config.toml ~/.cc-switch-simple/codex/xxxcom/config.toml
+cp codex/xxxcom/auth.json ~/.cc-switch-simple/codex/xxxcom/auth.json
 ```
 
-`~/.cc-switch-simple/codex/openai/config.toml`:
+After copying, edit the files as needed. For example, `~/.cc-switch-simple/codex/openai/config.toml`:
 
 ```toml
 model = "gpt-5"
@@ -149,10 +160,18 @@ sandbox_mode = "workspace-write"
 `~/.cc-switch-simple/codex/xxxcom/config.toml`:
 
 ```toml
-model = "gpt-5"
+disable_response_storage = true
+model = "gpt-5.5"
+model_reasoning_effort = "high"
 model_provider = "xxxcom"
-approval_policy = "on-request"
-sandbox_mode = "workspace-write"
+model_context_window = 1000000
+model_auto_compact_token_limit = 900000
+
+[model_providers.xxxcom]
+name = "xxxcom"
+base_url = "https://xxxcom.net/v1"
+requires_openai_auth = true
+wire_api = "responses"
 ```
 
 `~/.cc-switch-simple/codex/xxxcom/auth.json`:

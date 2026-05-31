@@ -122,14 +122,25 @@ cp profiles/local-test.template.json ~/.cc-switch-simple/profiles/local-test.jso
 
 ## Codex 预设初始化
 
-先手动创建预设目录：
+仓库 `codex/` 目录也提供可直接复制的 Codex 预设示例：
+
+- `codex/openai/config.toml`
+- `codex/openai/auth.json`
+- `codex/xxxcom/config.toml`
+- `codex/xxxcom/auth.json`
+
+先创建预设目录，再把示例复制过去：
 
 ```bash
 mkdir -p ~/.cc-switch-simple/codex/openai
 mkdir -p ~/.cc-switch-simple/codex/xxxcom
+cp codex/openai/config.toml ~/.cc-switch-simple/codex/openai/config.toml
+cp codex/openai/auth.json ~/.cc-switch-simple/codex/openai/auth.json
+cp codex/xxxcom/config.toml ~/.cc-switch-simple/codex/xxxcom/config.toml
+cp codex/xxxcom/auth.json ~/.cc-switch-simple/codex/xxxcom/auth.json
 ```
 
-`~/.cc-switch-simple/codex/openai/config.toml`：
+复制后可按需编辑。例如 `~/.cc-switch-simple/codex/openai/config.toml`：
 
 ```toml
 model = "gpt-5"
