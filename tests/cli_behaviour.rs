@@ -2,7 +2,7 @@ use std::fs;
 
 use cc_switch::{
     ResolvedPaths, backup_file_name, collect_profiles, create_backup, detect_current_profile_index,
-    next_profile_index,
+    next_profile_index, read_current_profile_name, use_next_profile, use_profile,
 };
 use tempfile::TempDir;
 use time::macros::datetime;
@@ -110,6 +110,158 @@ fn detect_current_profile_index_matches_canonical_json() {
     assert_eq!(index, Some(0));
 }
 
+#[test]
+fn use_profile_records_current_profile_name() {
+    let sandbox = Sandbox::new();
+    sandbox.write_profile("official", r#"{"name":"official"}"#);
+
+    use_profile(&sandbox.paths, "official").unwrap();
+
+    assert_eq!(
+        read_current_profile_name(&sandbox.paths)
+            .unwrap()
+            .as_deref(),
+        Some("official")
+    );
+}
+
+#[test]
+fn use_profile_syncs_modified_target_back_to_recorded_profile() {
+    let sandbox = Sandbox::new();
+    sandbox.write_profile("official", r#"{"env":{"ANTHROPIC_API_KEY":"old"}}"#);
+    sandbox.write_profile(
+        "deepseek",
+        r#"{"env":{"ANTHROPIC_BASE_URL":"https://example.test"}}"#,
+    );
+
+    use_profile(&sandbox.paths, "official").unwrap();
+    fs::write(
+        &sandbox.paths.target_settings_path,
+        "{\n  \"env\": {\n    \"ANTHROPIC_API_KEY\": \"edited\"\n  }\n}\n",
+    )
+    .unwrap();
+
+    use_profile(&sandbox.paths, "deepseek").unwrap();
+
+    assert_eq!(
+        fs::read_to_string(sandbox.paths.profile_path("official")).unwrap(),
+        "{\n  \"env\": {\n    \"ANTHROPIC_API_KEY\": \"edited\"\n  }\n}\n"
+    );
+    assert_eq!(
+        fs::read_to_string(&sandbox.paths.target_settings_path).unwrap(),
+        r#"{"env":{"ANTHROPIC_BASE_URL":"https://example.test"}}"#
+    );
+    assert_eq!(
+        read_current_profile_name(&sandbox.paths)
+            .unwrap()
+            .as_deref(),
+        Some("deepseek")
+    );
+}
+
+#[test]
+fn use_profile_does_not_sync_format_only_json_changes() {
+    let sandbox = Sandbox::new();
+    sandbox.write_profile("official", r#"{"env":{"A":1,"B":2}}"#);
+    sandbox.write_profile("deepseek", r#"{"env":{"A":3}}"#);
+
+    use_profile(&sandbox.paths, "official").unwrap();
+    fs::write(
+        &sandbox.paths.target_settings_path,
+        "{\n  \"env\": {\n    \"B\": 2,\n    \"A\": 1\n  }\n}\n",
+    )
+    .unwrap();
+
+    use_profile(&sandbox.paths, "deepseek").unwrap();
+
+    assert_eq!(
+        fs::read_to_string(sandbox.paths.profile_path("official")).unwrap(),
+        r#"{"env":{"A":1,"B":2}}"#
+    );
+}
+
+#[test]
+fn use_profile_aborts_on_invalid_target_json_before_sync_or_overwrite() {
+    let sandbox = Sandbox::new();
+    sandbox.write_profile("official", r#"{"name":"official"}"#);
+    sandbox.write_profile("deepseek", r#"{"name":"deepseek"}"#);
+
+    use_profile(&sandbox.paths, "official").unwrap();
+    fs::write(&sandbox.paths.target_settings_path, "{ invalid").unwrap();
+
+    let error = use_profile(&sandbox.paths, "deepseek")
+        .unwrap_err()
+        .to_string();
+
+    assert!(error.contains("expected") || error.contains("Invalid JSON"));
+    assert_eq!(
+        fs::read_to_string(sandbox.paths.profile_path("official")).unwrap(),
+        r#"{"name":"official"}"#
+    );
+    assert_eq!(
+        fs::read_to_string(&sandbox.paths.target_settings_path).unwrap(),
+        "{ invalid"
+    );
+    assert_eq!(
+        read_current_profile_name(&sandbox.paths)
+            .unwrap()
+            .as_deref(),
+        Some("official")
+    );
+}
+
+#[test]
+fn next_profile_uses_current_record_when_target_was_modified() {
+    let sandbox = Sandbox::new();
+    sandbox.write_profile("alpha", r#"{"name":"alpha"}"#);
+    sandbox.write_profile("beta", r#"{"name":"beta"}"#);
+
+    use_profile(&sandbox.paths, "alpha").unwrap();
+    fs::write(
+        &sandbox.paths.target_settings_path,
+        r#"{"name":"alpha","edited":true}"#,
+    )
+    .unwrap();
+
+    use_next_profile(&sandbox.paths).unwrap();
+
+    assert_eq!(
+        read_current_profile_name(&sandbox.paths)
+            .unwrap()
+            .as_deref(),
+        Some("beta")
+    );
+    assert_eq!(
+        fs::read_to_string(&sandbox.paths.target_settings_path).unwrap(),
+        r#"{"name":"beta"}"#
+    );
+    assert_eq!(
+        fs::read_to_string(sandbox.paths.profile_path("alpha")).unwrap(),
+        r#"{"name":"alpha","edited":true}"#
+    );
+}
+
+#[test]
+fn next_profile_falls_back_to_content_matching_without_current_record() {
+    let sandbox = Sandbox::new();
+    sandbox.write_profile("alpha", r#"{"name":"alpha"}"#);
+    sandbox.write_profile("beta", r#"{"name":"beta"}"#);
+    fs::write(&sandbox.paths.target_settings_path, r#"{"name":"alpha"}"#).unwrap();
+
+    use_next_profile(&sandbox.paths).unwrap();
+
+    assert_eq!(
+        read_current_profile_name(&sandbox.paths)
+            .unwrap()
+            .as_deref(),
+        Some("beta")
+    );
+    assert_eq!(
+        fs::read_to_string(&sandbox.paths.target_settings_path).unwrap(),
+        r#"{"name":"beta"}"#
+    );
+}
+
 struct Sandbox {
     _temp_dir: TempDir,
     paths: ResolvedPaths,
@@ -141,6 +293,7 @@ impl Sandbox {
                 config_dir: config_dir.clone(),
                 config_file_path: config_dir.join("config.toml"),
                 profiles_dir,
+                current_path: config_dir.join("current"),
                 backups_dir,
                 target_settings_path,
                 codex_profiles_dir: codex_profiles_dir.clone(),

@@ -32,6 +32,7 @@ pub mod paths;
 
 use std::fmt::Write as _;
 use std::fs;
+use std::io::{self, IsTerminal, Write};
 use std::path::{Path, PathBuf};
 use std::time::{SystemTime, UNIX_EPOCH};
 
@@ -80,12 +81,19 @@ pub fn list_profiles(paths: &ResolvedPaths) -> Result<()> {
     }
 
     let current = detect_current_profile_name(paths)?;
+    let recorded = if current.is_none() {
+        read_current_profile_name(paths)?
+    } else {
+        None
+    };
     println!("Available profiles:");
     println!();
 
     for profile in profiles {
         if current.as_deref() == Some(profile.name.as_str()) {
             println!("* {}", profile.name);
+        } else if recorded.as_deref() == Some(profile.name.as_str()) {
+            println!("* {} (recorded, modified)", profile.name);
         } else {
             println!("  {}", profile.name);
         }
@@ -109,9 +117,15 @@ pub fn show_current(paths: &ResolvedPaths) -> Result<()> {
     }
 
     let current = detect_current_profile_name(paths)?;
-    match current {
-        Some(name) => println!("Current profile: {}", name),
-        None => println!("Current profile: unknown"),
+    let recorded = if current.is_none() {
+        read_current_profile_name(paths)?
+    } else {
+        None
+    };
+    match (current, recorded) {
+        (Some(name), _) => println!("Current profile: {}", name),
+        (None, Some(name)) => println!("Current profile: {} (recorded, modified)", name),
+        (None, None) => println!("Current profile: unknown"),
     }
     println!("Target settings: {}", paths.target_settings_path.display());
     Ok(())
@@ -139,9 +153,12 @@ pub fn use_profile(paths: &ResolvedPaths, name: &str) -> Result<()> {
     if paths.target_settings_path.is_file() {
         let current_json = canonical_json_from_file(&paths.target_settings_path)?;
         if current_json == target_json {
+            write_current_profile_name(paths, name)?;
             println!("Already on profile: {}", name);
             return Ok(());
         }
+
+        sync_back_current_profile(paths)?;
 
         // 切换前先备份当前配置
         let backup_path = create_backup(
@@ -154,6 +171,7 @@ pub fn use_profile(paths: &ResolvedPaths, name: &str) -> Result<()> {
     }
 
     write_profile_to_target(&profile_path, &paths.target_settings_path)?;
+    write_current_profile_name(paths, name)?;
     println!("Switched to profile: {}", name);
     println!("Updated: {}", paths.target_settings_path.display());
     Ok(())
@@ -170,7 +188,7 @@ pub fn use_next_profile(paths: &ResolvedPaths) -> Result<()> {
         bail!("No profiles found in {}", paths.profiles_dir.display());
     }
 
-    let current = detect_current_profile_index(paths, &profiles)?;
+    let current = detect_current_profile_index_for_next(paths, &profiles)?;
     let next_index = next_profile_index(current, profiles.len())
         .ok_or_else(|| anyhow!("No profiles found in {}", paths.profiles_dir.display()))?;
 
@@ -181,6 +199,8 @@ pub fn use_next_profile(paths: &ResolvedPaths) -> Result<()> {
 
     println!("Current: {}", next_profile.name);
     println!("Before: {}", before);
+
+    sync_back_current_profile(paths)?;
 
     if paths.target_settings_path.is_file() {
         let backup_path = create_backup(
@@ -193,6 +213,7 @@ pub fn use_next_profile(paths: &ResolvedPaths) -> Result<()> {
     }
 
     write_profile_to_target(&next_profile.path, &paths.target_settings_path)?;
+    write_current_profile_name(paths, &next_profile.name)?;
 
     if profiles.len() == 1 {
         println!("Only one profile available.");
@@ -376,6 +397,91 @@ pub fn detect_current_profile_index(
     }
 
     Ok(None)
+}
+
+/// 读取当前记录的 Claude profile 名称。
+///
+/// 记录为空、名称非法或指向不存在的 profile 时返回 `None`。
+pub fn read_current_profile_name(paths: &ResolvedPaths) -> Result<Option<String>> {
+    if !paths.current_path.is_file() {
+        return Ok(None);
+    }
+
+    let raw = fs::read_to_string(&paths.current_path)
+        .with_context(|| format!("Failed to read {}", paths.current_path.display()))?;
+    let name = raw.trim();
+    if name.is_empty() || validate_profile_name(name).is_err() {
+        return Ok(None);
+    }
+    if !paths.profile_path(name).is_file() {
+        return Ok(None);
+    }
+
+    Ok(Some(name.to_string()))
+}
+
+fn write_current_profile_name(paths: &ResolvedPaths, name: &str) -> Result<()> {
+    write_bytes_to_target(name.as_bytes(), &paths.current_path)
+}
+
+fn detect_current_profile_index_for_next(
+    paths: &ResolvedPaths,
+    profiles: &[ProfileEntry],
+) -> Result<Option<usize>> {
+    if let Some(name) = read_current_profile_name(paths)?
+        && let Some(index) = profiles.iter().position(|profile| profile.name == name)
+    {
+        return Ok(Some(index));
+    }
+
+    detect_current_profile_index(paths, profiles)
+}
+
+fn sync_back_current_profile(paths: &ResolvedPaths) -> Result<()> {
+    let Some(name) = read_current_profile_name(paths)? else {
+        return Ok(());
+    };
+    if !paths.target_settings_path.is_file() {
+        return Ok(());
+    }
+
+    let profile_path = paths.profile_path(&name);
+    let target_content = fs::read(&paths.target_settings_path)
+        .with_context(|| format!("Failed to read {}", paths.target_settings_path.display()))?;
+    let target_json = canonical_json_from_slice(&target_content)
+        .with_context(|| format!("Invalid JSON: {}", paths.target_settings_path.display()))?;
+    let profile_json = canonical_json_from_file(&profile_path)?;
+
+    if target_json == profile_json {
+        return Ok(());
+    }
+
+    if should_sync_back(&format!(
+        "Detected changes in current Claude profile \"{name}\". Sync back before switching? [y/N] "
+    ))? {
+        write_bytes_to_target(&target_content, &profile_path)?;
+        println!("Synced current Claude profile: {}", name);
+    }
+
+    Ok(())
+}
+
+pub(crate) fn should_sync_back(prompt: &str) -> Result<bool> {
+    if !io::stdin().is_terminal() {
+        return Ok(true);
+    }
+
+    print!("{prompt}");
+    io::stdout().flush().context("Failed to flush stdout")?;
+
+    let mut input = String::new();
+    io::stdin()
+        .read_line(&mut input)
+        .context("Failed to read prompt input")?;
+    Ok(matches!(
+        input.trim().to_ascii_lowercase().as_str(),
+        "y" | "yes"
+    ))
 }
 
 /// 备份当前目标文件到 `backups/` 目录。
