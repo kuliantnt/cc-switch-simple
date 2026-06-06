@@ -3,7 +3,7 @@
 //! # 架构
 //!
 //! ```text
-//! main.rs  →  run()  →  命令分发  →  list / current / use / next / doctor
+//! main.rs  →  run()  →  命令分发  →  list / current / use / next / before / doctor
 //!                              └── PathResolver  →  ResolvedPaths
 //! ```
 //!
@@ -43,8 +43,9 @@ use time::OffsetDateTime;
 
 pub use cli::{Cli, CodexCommands, Commands};
 pub use codex::{
-    CodexProfileEntry, collect_codex_profiles, list_codex_profiles, read_codex_current_name,
-    show_codex_current, use_codex_profile, use_next_codex_profile,
+    CodexProfileEntry, collect_codex_profiles, list_codex_profiles, read_codex_before_name,
+    read_codex_current_name, show_codex_current, use_before_codex_profile, use_codex_profile,
+    use_next_codex_profile,
 };
 pub use config::{AppConfig, ConfigFile};
 pub use paths::{PathResolver, ResolvedPaths};
@@ -59,11 +60,13 @@ pub fn run() -> Result<()> {
         Commands::Current => show_current(&paths),
         Commands::Use { name } => use_profile(&paths, &name),
         Commands::Next => use_next_profile(&paths),
+        Commands::Before => use_before_profile(&paths),
         Commands::Cx { command } => match command {
             CodexCommands::List => list_codex_profiles(&paths),
             CodexCommands::Current => show_codex_current(&paths),
             CodexCommands::Use { name } => use_codex_profile(&paths, &name),
             CodexCommands::Next => use_next_codex_profile(&paths),
+            CodexCommands::Before => use_before_codex_profile(&paths),
         },
         Commands::Doctor => doctor(&paths),
     }
@@ -150,6 +153,7 @@ pub fn use_profile(paths: &ResolvedPaths, name: &str) -> Result<()> {
 
     // 规范化比较：如果目标内容和 profile 一致则无需切换
     let target_json = canonical_json_from_file(&profile_path)?;
+    let mut previous_profile = None;
     if paths.target_settings_path.is_file() {
         let current_json = canonical_json_from_file(&paths.target_settings_path)?;
         if current_json == target_json {
@@ -158,6 +162,7 @@ pub fn use_profile(paths: &ResolvedPaths, name: &str) -> Result<()> {
             return Ok(());
         }
 
+        previous_profile = current_profile_name_for_history(paths)?;
         sync_back_current_profile(paths)?;
 
         // 切换前先备份当前配置
@@ -172,6 +177,7 @@ pub fn use_profile(paths: &ResolvedPaths, name: &str) -> Result<()> {
 
     write_profile_to_target(&profile_path, &paths.target_settings_path)?;
     write_current_profile_name(paths, name)?;
+    record_before_profile_name(paths, previous_profile.as_deref(), name)?;
     println!("Switched to profile: {}", name);
     println!("Updated: {}", paths.target_settings_path.display());
     Ok(())
@@ -200,6 +206,20 @@ pub fn use_next_profile(paths: &ResolvedPaths) -> Result<()> {
     println!("Current: {}", next_profile.name);
     println!("Before: {}", before);
 
+    if current == Some(next_index) && paths.target_settings_path.is_file() {
+        let target_json = canonical_json_from_file(&next_profile.path)?;
+        let current_json = canonical_json_from_file(&paths.target_settings_path)?;
+        if current_json == target_json {
+            write_current_profile_name(paths, &next_profile.name)?;
+            if profiles.len() == 1 {
+                println!("Only one profile available.");
+            }
+            println!("Already on profile: {}", next_profile.name);
+            return Ok(());
+        }
+    }
+
+    let previous_profile = current.map(|index| profiles[index].name.clone());
     sync_back_current_profile(paths)?;
 
     if paths.target_settings_path.is_file() {
@@ -214,6 +234,7 @@ pub fn use_next_profile(paths: &ResolvedPaths) -> Result<()> {
 
     write_profile_to_target(&next_profile.path, &paths.target_settings_path)?;
     write_current_profile_name(paths, &next_profile.name)?;
+    record_before_profile_name(paths, previous_profile.as_deref(), &next_profile.name)?;
 
     if profiles.len() == 1 {
         println!("Only one profile available.");
@@ -222,6 +243,18 @@ pub fn use_next_profile(paths: &ResolvedPaths) -> Result<()> {
     println!("Switched to profile: {}", next_profile.name);
     println!("Updated: {}", paths.target_settings_path.display());
     Ok(())
+}
+
+/// `before` 子命令：切换到最近一次成功切换前的 profile。
+pub fn use_before_profile(paths: &ResolvedPaths) -> Result<()> {
+    ensure_runtime_dirs(paths)?;
+    let Some(name) = read_before_profile_name(paths)? else {
+        clear_before_profile_name(paths)?;
+        println!("No previous profile recorded. Skipped.");
+        return Ok(());
+    };
+
+    use_profile(paths, &name)
 }
 
 /// `doctor` 子命令：诊断运行时状态。
@@ -420,8 +453,66 @@ pub fn read_current_profile_name(paths: &ResolvedPaths) -> Result<Option<String>
     Ok(Some(name.to_string()))
 }
 
+/// 读取最近一次成功切换前的 Claude profile 名称。
+///
+/// 记录为空、名称非法或指向不存在的 profile 时返回 `None`。
+pub fn read_before_profile_name(paths: &ResolvedPaths) -> Result<Option<String>> {
+    if !paths.before_path.is_file() {
+        return Ok(None);
+    }
+
+    let raw = fs::read_to_string(&paths.before_path)
+        .with_context(|| format!("Failed to read {}", paths.before_path.display()))?;
+    let name = raw.trim();
+    if name.is_empty() || validate_profile_name(name).is_err() {
+        return Ok(None);
+    }
+    if !paths.profile_path(name).is_file() {
+        return Ok(None);
+    }
+
+    Ok(Some(name.to_string()))
+}
+
 fn write_current_profile_name(paths: &ResolvedPaths, name: &str) -> Result<()> {
     write_bytes_to_target(name.as_bytes(), &paths.current_path)
+}
+
+fn write_before_profile_name(paths: &ResolvedPaths, name: &str) -> Result<()> {
+    write_bytes_to_target(name.as_bytes(), &paths.before_path)
+}
+
+fn clear_before_profile_name(paths: &ResolvedPaths) -> Result<()> {
+    if paths.before_path.is_file() {
+        fs::remove_file(&paths.before_path)
+            .with_context(|| format!("Failed to remove {}", paths.before_path.display()))?;
+    }
+
+    Ok(())
+}
+
+fn current_profile_name_for_history(paths: &ResolvedPaths) -> Result<Option<String>> {
+    if !paths.target_settings_path.is_file() {
+        return Ok(None);
+    }
+
+    if let Some(name) = read_current_profile_name(paths)? {
+        return Ok(Some(name));
+    }
+
+    detect_current_profile_name(paths)
+}
+
+fn record_before_profile_name(
+    paths: &ResolvedPaths,
+    previous_profile: Option<&str>,
+    target_profile: &str,
+) -> Result<()> {
+    match previous_profile {
+        Some(name) if name != target_profile => write_before_profile_name(paths, name),
+        Some(_) => Ok(()),
+        None => clear_before_profile_name(paths),
+    }
 }
 
 fn detect_current_profile_index_for_next(

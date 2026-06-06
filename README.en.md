@@ -27,6 +27,7 @@ cc-switch list
 cc-switch current
 cc-switch use <name>
 cc-switch next
+cc-switch before
 cc-switch doctor
 ```
 
@@ -37,14 +38,17 @@ cc-switch cx list
 cc-switch cx current
 cc-switch cx use <name>
 cc-switch cx next
+cc-switch cx before
 ```
 
 Behavior:
 
 - Claude profiles are sorted by filename and matched by canonical JSON content
 - Codex profiles are sorted by directory name and tracked via `~/.cc-switch-simple/codex/current`
-- `use` and `next` always back up the current target file before overwrite
+- `use`, `next`, and `before` back up existing target files before real switches
 - `next` falls back to the first profile when the current selection is missing or unknown
+- `before` uses the profile from before the most recent successful switch, not name order
+- `before` prints a skip message and exits successfully when history is missing, invalid, or deleted
 
 ## Runtime Layout
 
@@ -56,6 +60,8 @@ Default runtime root:
 Claude Code files:
 
 - `profiles/` stores Claude JSON profiles
+- `current` stores the current selection record
+- `before` stores the profile from before the most recent successful switch
 - `backups/` stores Claude backups
 - `config.toml` is optional
 
@@ -86,6 +92,7 @@ Codex files:
 - preset config: `~/.cc-switch-simple/codex/<name>/config.toml`
 - preset auth: `~/.cc-switch-simple/codex/<name>/auth.json`
 - current selection record: `~/.cc-switch-simple/codex/current`
+- previous switch record: `~/.cc-switch-simple/codex/before`
 - backup directory: `~/.cc-switch-simple/backups/codex/`
 - active config: `${CODEX_HOME:-$HOME/.codex}/config.toml`
 - active auth: `${CODEX_HOME:-$HOME/.codex}/auth.json`
@@ -193,6 +200,7 @@ cc-switch list
 cc-switch current
 cc-switch use deepseek
 cc-switch next
+cc-switch before
 cc-switch doctor
 ```
 
@@ -203,6 +211,7 @@ cc-switch cx list
 cc-switch cx current
 cc-switch cx use openai
 cc-switch cx next
+cc-switch cx before
 ```
 
 ## Build And Verify

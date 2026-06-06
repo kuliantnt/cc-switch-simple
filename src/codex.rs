@@ -120,6 +120,17 @@ pub fn use_next_codex_profile(paths: &ResolvedPaths) -> Result<()> {
     switch_codex_profile(paths, &next.name, &next.path, &next_auth_path)
 }
 
+/// `cc-switch cx before`。
+pub fn use_before_codex_profile(paths: &ResolvedPaths) -> Result<()> {
+    let Some(name) = read_codex_before_name(paths)? else {
+        clear_codex_before_name(paths)?;
+        println!("No previous Codex profile recorded. Skipped.");
+        return Ok(());
+    };
+
+    use_codex_profile(paths, &name)
+}
+
 /// 扫描 `~/.cc-switch-simple/codex/<name>/config.toml` 和 `auth.json`。
 pub fn collect_codex_profiles(paths: &ResolvedPaths) -> Result<Vec<CodexProfileEntry>> {
     if !paths.codex_profiles_dir.is_dir() {
@@ -174,6 +185,25 @@ pub fn read_codex_current_name(paths: &ResolvedPaths) -> Result<Option<String>> 
     Ok(Some(name.to_string()))
 }
 
+/// 读取最近一次成功切换前的 Codex profile 名称。
+pub fn read_codex_before_name(paths: &ResolvedPaths) -> Result<Option<String>> {
+    if !paths.codex_before_path.is_file() {
+        return Ok(None);
+    }
+
+    let raw = fs::read_to_string(&paths.codex_before_path)
+        .with_context(|| format!("Failed to read {}", paths.codex_before_path.display()))?;
+    let name = raw.trim();
+    if name.is_empty() || validate_profile_name(name).is_err() {
+        return Ok(None);
+    }
+    if !codex_profile_files_exist(paths, name) {
+        return Ok(None);
+    }
+
+    Ok(Some(name.to_string()))
+}
+
 fn switch_codex_profile(
     paths: &ResolvedPaths,
     name: &str,
@@ -186,6 +216,7 @@ fn switch_codex_profile(
     ensure_target_file_slot(&paths.codex_target_auth_path, "Codex target auth")?;
 
     validate_target_auth_json(paths)?;
+    let previous_profile = current_codex_profile_name_for_history(paths)?;
     sync_back_current_codex_profile(paths)?;
 
     let now = OffsetDateTime::now_local().unwrap_or_else(|_| OffsetDateTime::now_utc());
@@ -210,6 +241,7 @@ fn switch_codex_profile(
     write_bytes_to_target(&config_content, &paths.codex_target_config_path)?;
     write_bytes_to_target(&auth_content, &paths.codex_target_auth_path)?;
     write_bytes_to_target(name.as_bytes(), &paths.codex_current_path)?;
+    record_codex_before_name(paths, previous_profile.as_deref(), name)?;
 
     println!("Switched Codex profile: {}", name);
     println!("Updated: {}", paths.codex_target_config_path.display());
@@ -282,6 +314,50 @@ fn read_existing_codex_current_name(paths: &ResolvedPaths) -> Result<Option<Stri
     }
 
     Ok(Some(name))
+}
+
+fn codex_profile_files_exist(paths: &ResolvedPaths, name: &str) -> bool {
+    paths.codex_profile_path(name).is_file() && paths.codex_auth_path(name).is_file()
+}
+
+fn write_codex_before_name(paths: &ResolvedPaths, name: &str) -> Result<()> {
+    write_bytes_to_target(name.as_bytes(), &paths.codex_before_path)
+}
+
+fn clear_codex_before_name(paths: &ResolvedPaths) -> Result<()> {
+    if paths.codex_before_path.is_file() {
+        fs::remove_file(&paths.codex_before_path)
+            .with_context(|| format!("Failed to remove {}", paths.codex_before_path.display()))?;
+    }
+
+    Ok(())
+}
+
+fn current_codex_profile_name_for_history(paths: &ResolvedPaths) -> Result<Option<String>> {
+    if !paths.codex_target_config_path.is_file() || !paths.codex_target_auth_path.is_file() {
+        return Ok(None);
+    }
+
+    let Some(name) = read_codex_current_name(paths)? else {
+        return Ok(None);
+    };
+    if validate_profile_name(&name).is_err() || !codex_profile_files_exist(paths, &name) {
+        return Ok(None);
+    }
+
+    Ok(Some(name))
+}
+
+fn record_codex_before_name(
+    paths: &ResolvedPaths,
+    previous_profile: Option<&str>,
+    target_profile: &str,
+) -> Result<()> {
+    match previous_profile {
+        Some(name) if name != target_profile => write_codex_before_name(paths, name),
+        Some(_) => Ok(()),
+        None => clear_codex_before_name(paths),
+    }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]

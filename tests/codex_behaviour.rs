@@ -1,8 +1,8 @@
 use std::fs;
 
 use cc_switch::{
-    ResolvedPaths, collect_codex_profiles, read_codex_current_name, use_codex_profile,
-    use_next_codex_profile,
+    ResolvedPaths, collect_codex_profiles, read_codex_before_name, read_codex_current_name,
+    use_before_codex_profile, use_codex_profile, use_next_codex_profile,
 };
 use tempfile::TempDir;
 
@@ -374,6 +374,118 @@ fn use_codex_profile_skips_missing_active_file_during_sync_back() {
     );
 }
 
+#[test]
+fn use_before_codex_profile_switches_to_previous_profile_and_toggles() {
+    let sandbox = Sandbox::new();
+    sandbox.write_codex_profile("openai", "model = \"gpt-5\"\n", "{\"token\":\"openai\"}");
+    sandbox.write_codex_profile("xxxcom", "model = \"mirror\"\n", "{\"token\":\"xxx\"}");
+
+    use_codex_profile(&sandbox.paths, "openai").unwrap();
+    use_codex_profile(&sandbox.paths, "xxxcom").unwrap();
+
+    assert_eq!(
+        read_codex_before_name(&sandbox.paths).unwrap().as_deref(),
+        Some("openai")
+    );
+
+    use_before_codex_profile(&sandbox.paths).unwrap();
+
+    assert_eq!(
+        read_codex_current_name(&sandbox.paths).unwrap().as_deref(),
+        Some("openai")
+    );
+    assert_eq!(
+        fs::read_to_string(&sandbox.paths.codex_target_config_path).unwrap(),
+        "model = \"gpt-5\"\n"
+    );
+    assert_eq!(
+        fs::read_to_string(&sandbox.paths.codex_target_auth_path).unwrap(),
+        "{\"token\":\"openai\"}"
+    );
+    assert_eq!(
+        read_codex_before_name(&sandbox.paths).unwrap().as_deref(),
+        Some("xxxcom")
+    );
+
+    use_before_codex_profile(&sandbox.paths).unwrap();
+
+    assert_eq!(
+        read_codex_current_name(&sandbox.paths).unwrap().as_deref(),
+        Some("xxxcom")
+    );
+    assert_eq!(
+        fs::read_to_string(&sandbox.paths.codex_target_config_path).unwrap(),
+        "model = \"mirror\"\n"
+    );
+    assert_eq!(
+        fs::read_to_string(&sandbox.paths.codex_target_auth_path).unwrap(),
+        "{\"token\":\"xxx\"}"
+    );
+    assert_eq!(
+        read_codex_before_name(&sandbox.paths).unwrap().as_deref(),
+        Some("openai")
+    );
+}
+
+#[test]
+fn use_before_codex_profile_without_history_skips_without_changing_targets() {
+    let sandbox = Sandbox::new();
+    fs::write(
+        &sandbox.paths.codex_target_config_path,
+        "model = \"active\"\n",
+    )
+    .unwrap();
+    fs::write(
+        &sandbox.paths.codex_target_auth_path,
+        "{\"token\":\"active\"}",
+    )
+    .unwrap();
+
+    use_before_codex_profile(&sandbox.paths).unwrap();
+
+    assert_eq!(
+        fs::read_to_string(&sandbox.paths.codex_target_config_path).unwrap(),
+        "model = \"active\"\n"
+    );
+    assert_eq!(
+        fs::read_to_string(&sandbox.paths.codex_target_auth_path).unwrap(),
+        "{\"token\":\"active\"}"
+    );
+    assert_eq!(read_codex_before_name(&sandbox.paths).unwrap(), None);
+}
+
+#[test]
+fn use_before_codex_profile_with_incomplete_history_profile_skips_without_error() {
+    let sandbox = Sandbox::new();
+    let partial_dir = sandbox.paths.codex_profiles_dir.join("partial");
+    fs::create_dir_all(&partial_dir).unwrap();
+    fs::write(partial_dir.join("config.toml"), "model = \"partial\"\n").unwrap();
+    fs::write(&sandbox.paths.codex_before_path, "partial").unwrap();
+    fs::write(
+        &sandbox.paths.codex_target_config_path,
+        "model = \"active\"\n",
+    )
+    .unwrap();
+    fs::write(
+        &sandbox.paths.codex_target_auth_path,
+        "{\"token\":\"active\"}",
+    )
+    .unwrap();
+
+    use_before_codex_profile(&sandbox.paths).unwrap();
+
+    assert_eq!(
+        fs::read_to_string(&sandbox.paths.codex_target_config_path).unwrap(),
+        "model = \"active\"\n"
+    );
+    assert_eq!(
+        fs::read_to_string(&sandbox.paths.codex_target_auth_path).unwrap(),
+        "{\"token\":\"active\"}"
+    );
+    assert_eq!(read_codex_before_name(&sandbox.paths).unwrap(), None);
+    assert!(!sandbox.paths.codex_before_path.is_file());
+}
+
 struct Sandbox {
     _temp_dir: TempDir,
     paths: ResolvedPaths,
@@ -406,10 +518,12 @@ impl Sandbox {
                 config_file_path: config_dir.join("config.toml"),
                 profiles_dir,
                 current_path: config_dir.join("current"),
+                before_path: config_dir.join("before"),
                 backups_dir,
                 target_settings_path,
                 codex_profiles_dir: codex_profiles_dir.clone(),
                 codex_current_path: codex_profiles_dir.join("current"),
+                codex_before_path: codex_profiles_dir.join("before"),
                 codex_backups_dir,
                 codex_target_config_path,
                 codex_target_auth_path,

@@ -2,7 +2,8 @@ use std::fs;
 
 use cc_switch::{
     ResolvedPaths, backup_file_name, collect_profiles, create_backup, detect_current_profile_index,
-    next_profile_index, read_current_profile_name, use_next_profile, use_profile,
+    next_profile_index, read_before_profile_name, read_current_profile_name, use_before_profile,
+    use_next_profile, use_profile,
 };
 use tempfile::TempDir;
 use time::macros::datetime;
@@ -262,6 +263,96 @@ fn next_profile_falls_back_to_content_matching_without_current_record() {
     );
 }
 
+#[test]
+fn before_profile_switches_to_previous_profile_and_toggles() {
+    let sandbox = Sandbox::new();
+    sandbox.write_profile("alpha", r#"{"name":"alpha"}"#);
+    sandbox.write_profile("beta", r#"{"name":"beta"}"#);
+
+    use_profile(&sandbox.paths, "alpha").unwrap();
+    use_profile(&sandbox.paths, "beta").unwrap();
+
+    assert_eq!(
+        read_before_profile_name(&sandbox.paths).unwrap().as_deref(),
+        Some("alpha")
+    );
+
+    use_before_profile(&sandbox.paths).unwrap();
+
+    assert_eq!(
+        read_current_profile_name(&sandbox.paths)
+            .unwrap()
+            .as_deref(),
+        Some("alpha")
+    );
+    assert_eq!(
+        fs::read_to_string(&sandbox.paths.target_settings_path).unwrap(),
+        r#"{"name":"alpha"}"#
+    );
+    assert_eq!(
+        read_before_profile_name(&sandbox.paths).unwrap().as_deref(),
+        Some("beta")
+    );
+
+    use_before_profile(&sandbox.paths).unwrap();
+
+    assert_eq!(
+        read_current_profile_name(&sandbox.paths)
+            .unwrap()
+            .as_deref(),
+        Some("beta")
+    );
+    assert_eq!(
+        fs::read_to_string(&sandbox.paths.target_settings_path).unwrap(),
+        r#"{"name":"beta"}"#
+    );
+    assert_eq!(
+        read_before_profile_name(&sandbox.paths).unwrap().as_deref(),
+        Some("alpha")
+    );
+}
+
+#[test]
+fn before_profile_without_history_skips_without_changing_target() {
+    let sandbox = Sandbox::new();
+    sandbox.write_profile("alpha", r#"{"name":"alpha"}"#);
+    fs::write(&sandbox.paths.target_settings_path, r#"{"name":"active"}"#).unwrap();
+
+    use_before_profile(&sandbox.paths).unwrap();
+
+    assert_eq!(
+        fs::read_to_string(&sandbox.paths.target_settings_path).unwrap(),
+        r#"{"name":"active"}"#
+    );
+    assert_eq!(read_before_profile_name(&sandbox.paths).unwrap(), None);
+}
+
+#[test]
+fn before_profile_with_deleted_history_profile_skips_without_error() {
+    let sandbox = Sandbox::new();
+    sandbox.write_profile("alpha", r#"{"name":"alpha"}"#);
+    sandbox.write_profile("beta", r#"{"name":"beta"}"#);
+
+    use_profile(&sandbox.paths, "alpha").unwrap();
+    use_profile(&sandbox.paths, "beta").unwrap();
+    fs::remove_file(sandbox.paths.profile_path("alpha")).unwrap();
+
+    use_before_profile(&sandbox.paths).unwrap();
+
+    assert_eq!(
+        read_current_profile_name(&sandbox.paths)
+            .unwrap()
+            .as_deref(),
+        Some("beta")
+    );
+    assert_eq!(
+        fs::read_to_string(&sandbox.paths.target_settings_path).unwrap(),
+        r#"{"name":"beta"}"#
+    );
+    assert_eq!(read_before_profile_name(&sandbox.paths).unwrap(), None);
+    assert!(!sandbox.paths.before_path.is_file());
+}
+
 struct Sandbox {
     _temp_dir: TempDir,
     paths: ResolvedPaths,
@@ -294,10 +385,12 @@ impl Sandbox {
                 config_file_path: config_dir.join("config.toml"),
                 profiles_dir,
                 current_path: config_dir.join("current"),
+                before_path: config_dir.join("before"),
                 backups_dir,
                 target_settings_path,
                 codex_profiles_dir: codex_profiles_dir.clone(),
                 codex_current_path: codex_profiles_dir.join("current"),
+                codex_before_path: codex_profiles_dir.join("before"),
                 codex_backups_dir,
                 codex_target_config_path,
                 codex_target_auth_path,

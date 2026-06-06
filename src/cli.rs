@@ -5,6 +5,7 @@
 //! - `current` 显示当前目标配置文件匹配到的 profile 名称
 //! - `use`     切换到指定名称的 profile
 //! - `next`    按文件名排序轮换到下一个 profile
+//! - `before`  切换到最近一次成功切换前的 profile
 //! - `doctor`  诊断：检查目录、配置路径、JSON 有效性
 
 use clap::{Parser, Subcommand};
@@ -31,6 +32,8 @@ pub enum Commands {
     Use { name: String },
     /// 按文件名排序轮换到下一个 profile（先备份再写入）。
     Next,
+    /// 切换到最近一次成功切换前的 profile。
+    Before,
     /// 切换 Codex 预设（`config.toml` + `auth.json`）。
     Cx {
         #[command(subcommand)]
@@ -50,4 +53,6 @@ pub enum CodexCommands {
     Use { name: String },
     /// 按名称排序轮换到下一个 Codex 预设。
     Next,
+    /// 切换到最近一次成功切换前的 Codex 预设。
+    Before,
 }

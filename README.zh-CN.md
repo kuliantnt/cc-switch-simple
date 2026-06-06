@@ -27,6 +27,7 @@ cc-switch list
 cc-switch current
 cc-switch use <name>
 cc-switch next
+cc-switch before
 cc-switch doctor
 ```
 
@@ -37,14 +38,17 @@ cc-switch cx list
 cc-switch cx current
 cc-switch cx use <name>
 cc-switch cx next
+cc-switch cx before
 ```
 
 行为规则：
 
 - Claude profile 按文件名排序，通过规范化 JSON 内容识别当前项
 - Codex profile 按目录名排序，通过 `~/.cc-switch-simple/codex/current` 记录当前项
-- `use` 和 `next` 覆盖前都会先备份现有目标文件
+- `use`、`next` 和 `before` 真正切换前都会先备份现有目标文件
 - `next` 在当前项缺失或无法识别时，会回退到第一个 profile
+- `before` 使用最近一次成功切换前的 profile，不按名称排序
+- `before` 在没有历史记录、历史记录非法或 profile 已删除时会提示并跳过
 
 ## 运行时目录
 
@@ -56,6 +60,8 @@ cc-switch cx next
 Claude Code 相关文件：
 
 - `profiles/`：Claude JSON profile
+- `current`：当前选择记录
+- `before`：最近一次成功切换前的 profile 记录
 - `backups/`：Claude 自动备份
 - `config.toml`：可选配置
 
@@ -86,6 +92,7 @@ Codex 相关文件：
 - 预设配置：`~/.cc-switch-simple/codex/<name>/config.toml`
 - 预设认证：`~/.cc-switch-simple/codex/<name>/auth.json`
 - 当前选择记录：`~/.cc-switch-simple/codex/current`
+- 上一次切换记录：`~/.cc-switch-simple/codex/before`
 - 备份目录：`~/.cc-switch-simple/backups/codex/`
 - 当前生效配置：`${CODEX_HOME:-$HOME/.codex}/config.toml`
 - 当前生效认证：`${CODEX_HOME:-$HOME/.codex}/auth.json`
@@ -193,6 +200,7 @@ cc-switch list
 cc-switch current
 cc-switch use deepseek
 cc-switch next
+cc-switch before
 cc-switch doctor
 ```
 
@@ -203,6 +211,7 @@ cc-switch cx list
 cc-switch cx current
 cc-switch cx use openai
 cc-switch cx next
+cc-switch cx before
 ```
 
 ## 构建与验证

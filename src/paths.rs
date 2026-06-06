@@ -8,10 +8,12 @@
 //! | `config_file_path` | `config.toml` 路径 |
 //! | `profiles_dir` | profile JSON 存放目录 |
 //! | `current_path` | 当前选择的 Claude profile 记录文件 |
+//! | `before_path` | 最近一次切换前的 Claude profile 记录文件 |
 //! | `backups_dir` | 自动备份目录 |
 //! | `target_settings_path` | Claude Code 的 `settings.json` |
 //! | `codex_profiles_dir` | Codex 预设目录 |
 //! | `codex_current_path` | 当前选择的 Codex profile 记录文件 |
+//! | `codex_before_path` | 最近一次切换前的 Codex profile 记录文件 |
 //! | `codex_backups_dir` | Codex 自动备份目录 |
 //! | `codex_target_config_path` | Codex 当前生效的 `config.toml` |
 //! | `codex_target_auth_path` | Codex 当前生效的 `auth.json` |
@@ -43,6 +45,8 @@ pub struct ResolvedPaths {
     pub profiles_dir: PathBuf,
     /// 当前选择的 Claude profile 记录文件。
     pub current_path: PathBuf,
+    /// 最近一次成功切换前的 Claude profile 记录文件。
+    pub before_path: PathBuf,
     /// 自动备份存放目录。
     pub backups_dir: PathBuf,
     /// Claude Code 目标 `settings.json` 路径。
@@ -51,6 +55,8 @@ pub struct ResolvedPaths {
     pub codex_profiles_dir: PathBuf,
     /// 当前选择的 Codex profile 记录文件。
     pub codex_current_path: PathBuf,
+    /// 最近一次成功切换前的 Codex profile 记录文件。
+    pub codex_before_path: PathBuf,
     /// Codex 自动备份目录。
     pub codex_backups_dir: PathBuf,
     /// Codex 当前生效的 `config.toml` 路径。
@@ -110,6 +116,7 @@ impl PathResolver {
         let app_config = load_config(&config_file_path)?;
         let codex_profiles_dir = config_dir.join("codex");
         let codex_current_path = codex_profiles_dir.join("current");
+        let codex_before_path = codex_profiles_dir.join("before");
         let codex_backups_dir = config_dir.join("backups").join("codex");
         let codex_home_dir =
             resolve_codex_home_dir(self.base_dirs.home_dir(), std::env::var_os("CODEX_HOME"))?;
@@ -128,12 +135,14 @@ impl PathResolver {
         Ok(ResolvedPaths {
             profiles_dir: config_dir.join("profiles"),
             current_path: config_dir.join("current"),
+            before_path: config_dir.join("before"),
             backups_dir: config_dir.join("backups"),
             config_dir,
             config_file_path,
             target_settings_path,
             codex_profiles_dir,
             codex_current_path,
+            codex_before_path,
             codex_backups_dir,
             codex_target_config_path,
             codex_target_auth_path,
