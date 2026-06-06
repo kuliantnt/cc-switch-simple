@@ -1,0 +1,12 @@
+disable_response_storage = true
+model = "gpt-5.5"
+model_reasoning_effort = "high"
+model_provider = "xxxcom"
+model_context_window = 1000000
+model_auto_compact_token_limit = 900000
+
+[model_providers.xxxcom]
+name = "xxxcom"
+base_url = "https://xxxcom.net/v1"
+requires_openai_auth = true
+wire_api = "responses"

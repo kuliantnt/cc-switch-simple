@@ -121,7 +121,7 @@ fn use_next_codex_profile_uses_current_record_and_wraps() {
     );
     assert_eq!(
         fs::read_to_string(&sandbox.paths.codex_target_auth_path).unwrap(),
-        "{\"token\":\"openai\"}"
+        "{\"token\":\"old\"}"
     );
 }
 
@@ -195,6 +195,185 @@ fn use_codex_profile_requires_auth_json_in_profile() {
     assert!(error.contains("Codex profile auth not found"));
 }
 
+#[test]
+fn use_codex_profile_syncs_modified_active_files_back_to_current_profile() {
+    let sandbox = Sandbox::new();
+    sandbox.write_codex_profile("openai", "model = \"gpt-5\"\n", "{\"token\":\"openai\"}");
+    sandbox.write_codex_profile("xxxcom", "model = \"mirror\"\n", "{\"token\":\"xxx\"}");
+
+    use_codex_profile(&sandbox.paths, "openai").unwrap();
+    fs::write(
+        &sandbox.paths.codex_target_config_path,
+        "# local edit\nmodel = \"gpt-5\"\n",
+    )
+    .unwrap();
+    fs::write(
+        &sandbox.paths.codex_target_auth_path,
+        "{\n  \"token\": \"edited\"\n}\n",
+    )
+    .unwrap();
+
+    use_codex_profile(&sandbox.paths, "xxxcom").unwrap();
+
+    assert_eq!(
+        fs::read_to_string(sandbox.paths.codex_profile_path("openai")).unwrap(),
+        "# local edit\nmodel = \"gpt-5\"\n"
+    );
+    assert_eq!(
+        fs::read_to_string(sandbox.paths.codex_auth_path("openai")).unwrap(),
+        "{\n  \"token\": \"edited\"\n}\n"
+    );
+    assert_eq!(
+        fs::read_to_string(&sandbox.paths.codex_target_config_path).unwrap(),
+        "model = \"mirror\"\n"
+    );
+    assert_eq!(
+        fs::read_to_string(&sandbox.paths.codex_target_auth_path).unwrap(),
+        "{\"token\":\"xxx\"}"
+    );
+}
+
+#[test]
+fn use_codex_profile_syncs_only_changed_config_file() {
+    let sandbox = Sandbox::new();
+    sandbox.write_codex_profile("openai", "model = \"gpt-5\"\n", "{\"token\":\"openai\"}");
+    sandbox.write_codex_profile("xxxcom", "model = \"mirror\"\n", "{\"token\":\"xxx\"}");
+
+    use_codex_profile(&sandbox.paths, "openai").unwrap();
+    fs::write(
+        &sandbox.paths.codex_target_config_path,
+        "model = \"gpt-5\"\nprovider = \"local\"\n",
+    )
+    .unwrap();
+
+    use_codex_profile(&sandbox.paths, "xxxcom").unwrap();
+
+    assert_eq!(
+        fs::read_to_string(sandbox.paths.codex_profile_path("openai")).unwrap(),
+        "model = \"gpt-5\"\nprovider = \"local\"\n"
+    );
+    assert_eq!(
+        fs::read_to_string(sandbox.paths.codex_auth_path("openai")).unwrap(),
+        "{\"token\":\"openai\"}"
+    );
+}
+
+#[test]
+fn use_codex_profile_syncs_only_changed_auth_file() {
+    let sandbox = Sandbox::new();
+    sandbox.write_codex_profile("openai", "model = \"gpt-5\"\n", "{\"token\":\"openai\"}");
+    sandbox.write_codex_profile("xxxcom", "model = \"mirror\"\n", "{\"token\":\"xxx\"}");
+
+    use_codex_profile(&sandbox.paths, "openai").unwrap();
+    fs::write(
+        &sandbox.paths.codex_target_auth_path,
+        "{\"token\":\"edited\"}",
+    )
+    .unwrap();
+
+    use_codex_profile(&sandbox.paths, "xxxcom").unwrap();
+
+    assert_eq!(
+        fs::read_to_string(sandbox.paths.codex_profile_path("openai")).unwrap(),
+        "model = \"gpt-5\"\n"
+    );
+    assert_eq!(
+        fs::read_to_string(sandbox.paths.codex_auth_path("openai")).unwrap(),
+        "{\"token\":\"edited\"}"
+    );
+}
+
+#[test]
+fn use_codex_profile_skips_sync_when_current_record_is_missing_or_invalid() {
+    let sandbox = Sandbox::new();
+    sandbox.write_codex_profile("openai", "model = \"gpt-5\"\n", "{\"token\":\"openai\"}");
+    sandbox.write_codex_profile("xxxcom", "model = \"mirror\"\n", "{\"token\":\"xxx\"}");
+    fs::write(&sandbox.paths.codex_current_path, "missing").unwrap();
+    fs::write(
+        &sandbox.paths.codex_target_config_path,
+        "model = \"locally edited\"\n",
+    )
+    .unwrap();
+    fs::write(
+        &sandbox.paths.codex_target_auth_path,
+        "{\"token\":\"edited\"}",
+    )
+    .unwrap();
+
+    use_codex_profile(&sandbox.paths, "xxxcom").unwrap();
+
+    assert_eq!(
+        fs::read_to_string(sandbox.paths.codex_profile_path("openai")).unwrap(),
+        "model = \"gpt-5\"\n"
+    );
+    assert_eq!(
+        fs::read_to_string(sandbox.paths.codex_auth_path("openai")).unwrap(),
+        "{\"token\":\"openai\"}"
+    );
+    assert_eq!(
+        read_codex_current_name(&sandbox.paths).unwrap().as_deref(),
+        Some("xxxcom")
+    );
+}
+
+#[test]
+fn use_codex_profile_aborts_when_active_auth_json_is_invalid() {
+    let sandbox = Sandbox::new();
+    sandbox.write_codex_profile("openai", "model = \"gpt-5\"\n", "{\"token\":\"openai\"}");
+    sandbox.write_codex_profile("xxxcom", "model = \"mirror\"\n", "{\"token\":\"xxx\"}");
+
+    use_codex_profile(&sandbox.paths, "openai").unwrap();
+    fs::write(&sandbox.paths.codex_target_auth_path, "{ invalid").unwrap();
+
+    let error = use_codex_profile(&sandbox.paths, "xxxcom")
+        .unwrap_err()
+        .to_string();
+
+    assert!(error.contains("Invalid JSON") || error.contains("expected"));
+    assert_eq!(
+        fs::read_to_string(sandbox.paths.codex_auth_path("openai")).unwrap(),
+        "{\"token\":\"openai\"}"
+    );
+    assert_eq!(
+        fs::read_to_string(&sandbox.paths.codex_target_auth_path).unwrap(),
+        "{ invalid"
+    );
+    assert_eq!(
+        read_codex_current_name(&sandbox.paths).unwrap().as_deref(),
+        Some("openai")
+    );
+}
+
+#[test]
+fn use_codex_profile_skips_missing_active_file_during_sync_back() {
+    let sandbox = Sandbox::new();
+    sandbox.write_codex_profile("openai", "model = \"gpt-5\"\n", "{\"token\":\"openai\"}");
+    sandbox.write_codex_profile("xxxcom", "model = \"mirror\"\n", "{\"token\":\"xxx\"}");
+
+    use_codex_profile(&sandbox.paths, "openai").unwrap();
+    fs::remove_file(&sandbox.paths.codex_target_auth_path).unwrap();
+    fs::write(
+        &sandbox.paths.codex_target_config_path,
+        "model = \"edited\"\n",
+    )
+    .unwrap();
+
+    use_codex_profile(&sandbox.paths, "xxxcom").unwrap();
+
+    assert_eq!(
+        fs::read_to_string(sandbox.paths.codex_profile_path("openai")).unwrap(),
+        "model = \"edited\"\n"
+    );
+    assert_eq!(
+        fs::read_to_string(sandbox.paths.codex_auth_path("openai")).unwrap(),
+        "{\"token\":\"openai\"}"
+    );
+    assert_eq!(
+        fs::read_to_string(&sandbox.paths.codex_target_auth_path).unwrap(),
+        "{\"token\":\"xxx\"}"
+    );
+}
+
 struct Sandbox {
     _temp_dir: TempDir,
     paths: ResolvedPaths,
@@ -226,6 +405,7 @@ impl Sandbox {
                 config_dir: config_dir.clone(),
                 config_file_path: config_dir.join("config.toml"),
                 profiles_dir,
+                current_path: config_dir.join("current"),
                 backups_dir,
                 target_settings_path,
                 codex_profiles_dir: codex_profiles_dir.clone(),

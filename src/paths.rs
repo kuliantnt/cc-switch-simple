@@ -7,6 +7,7 @@
 //! | `config_dir` | 运行时配置根目录 |
 //! | `config_file_path` | `config.toml` 路径 |
 //! | `profiles_dir` | profile JSON 存放目录 |
+//! | `current_path` | 当前选择的 Claude profile 记录文件 |
 //! | `backups_dir` | 自动备份目录 |
 //! | `target_settings_path` | Claude Code 的 `settings.json` |
 //! | `codex_profiles_dir` | Codex 预设目录 |
@@ -40,6 +41,8 @@ pub struct ResolvedPaths {
     pub config_file_path: PathBuf,
     /// profile JSON 存放目录。
     pub profiles_dir: PathBuf,
+    /// 当前选择的 Claude profile 记录文件。
+    pub current_path: PathBuf,
     /// 自动备份存放目录。
     pub backups_dir: PathBuf,
     /// Claude Code 目标 `settings.json` 路径。
@@ -124,6 +127,7 @@ impl PathResolver {
 
         Ok(ResolvedPaths {
             profiles_dir: config_dir.join("profiles"),
+            current_path: config_dir.join("current"),
             backups_dir: config_dir.join("backups"),
             config_dir,
             config_file_path,

@@ -6,7 +6,10 @@ use std::path::{Path, PathBuf};
 use anyhow::{Context, Result, anyhow, bail};
 use time::OffsetDateTime;
 
-use crate::{ResolvedPaths, next_profile_index, validate_profile_name, write_bytes_to_target};
+use crate::{
+    ResolvedPaths, next_profile_index, should_sync_back, validate_profile_name,
+    write_bytes_to_target,
+};
 
 /// 一个 Codex profile 条目：名称 + `config.toml` 路径。
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -182,6 +185,9 @@ fn switch_codex_profile(
     ensure_target_file_slot(&paths.codex_target_config_path, "Codex target config")?;
     ensure_target_file_slot(&paths.codex_target_auth_path, "Codex target auth")?;
 
+    validate_target_auth_json(paths)?;
+    sync_back_current_codex_profile(paths)?;
+
     let now = OffsetDateTime::now_local().unwrap_or_else(|_| OffsetDateTime::now_utc());
     if paths.codex_target_config_path.is_file() {
         let backup_path = create_codex_backup(paths, &paths.codex_target_config_path, now)?;
@@ -209,6 +215,117 @@ fn switch_codex_profile(
     println!("Updated: {}", paths.codex_target_config_path.display());
     println!("Updated: {}", paths.codex_target_auth_path.display());
     Ok(())
+}
+
+fn sync_back_current_codex_profile(paths: &ResolvedPaths) -> Result<()> {
+    let Some(name) = read_existing_codex_current_name(paths)? else {
+        return Ok(());
+    };
+
+    let profile_config_path = paths.codex_profile_path(&name);
+    let profile_auth_path = paths.codex_auth_path(&name);
+    if !profile_config_path.is_file() || !profile_auth_path.is_file() {
+        return Ok(());
+    }
+
+    let mut changes = Vec::new();
+    if let Some(change) = pending_sync_file(
+        &paths.codex_target_config_path,
+        &profile_config_path,
+        CodexSyncKind::Config,
+    )? {
+        changes.push(change);
+    }
+    if let Some(change) = pending_sync_file(
+        &paths.codex_target_auth_path,
+        &profile_auth_path,
+        CodexSyncKind::Auth,
+    )? {
+        changes.push(change);
+    }
+
+    if changes.is_empty() {
+        return Ok(());
+    }
+
+    if should_sync_back(&format!(
+        "Detected changes in current Codex profile \"{name}\". Sync back before switching? [y/N] "
+    ))? {
+        for change in changes {
+            write_bytes_to_target(&change.content, &change.profile_path)?;
+            println!("Synced current Codex profile file: {}", change.file_name);
+        }
+        println!("Synced current Codex profile: {}", name);
+    }
+
+    Ok(())
+}
+
+fn validate_target_auth_json(paths: &ResolvedPaths) -> Result<()> {
+    if !paths.codex_target_auth_path.is_file() {
+        return Ok(());
+    }
+
+    let content = fs::read(&paths.codex_target_auth_path)
+        .with_context(|| format!("Failed to read {}", paths.codex_target_auth_path.display()))?;
+    serde_json::from_slice::<serde_json::Value>(&content)
+        .with_context(|| format!("Invalid JSON: {}", paths.codex_target_auth_path.display()))?;
+    Ok(())
+}
+
+fn read_existing_codex_current_name(paths: &ResolvedPaths) -> Result<Option<String>> {
+    let Some(name) = read_codex_current_name(paths)? else {
+        return Ok(None);
+    };
+    if validate_profile_name(&name).is_err() {
+        return Ok(None);
+    }
+
+    Ok(Some(name))
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum CodexSyncKind {
+    Config,
+    Auth,
+}
+
+struct PendingCodexSync {
+    file_name: &'static str,
+    profile_path: PathBuf,
+    content: Vec<u8>,
+}
+
+fn pending_sync_file(
+    target_path: &Path,
+    profile_path: &Path,
+    kind: CodexSyncKind,
+) -> Result<Option<PendingCodexSync>> {
+    if !target_path.is_file() {
+        return Ok(None);
+    }
+
+    let target_content = fs::read(target_path)
+        .with_context(|| format!("Failed to read {}", target_path.display()))?;
+    if kind == CodexSyncKind::Auth {
+        serde_json::from_slice::<serde_json::Value>(&target_content)
+            .with_context(|| format!("Invalid JSON: {}", target_path.display()))?;
+    }
+
+    let profile_content = fs::read(profile_path)
+        .with_context(|| format!("Failed to read {}", profile_path.display()))?;
+    if target_content == profile_content {
+        return Ok(None);
+    }
+
+    Ok(Some(PendingCodexSync {
+        file_name: match kind {
+            CodexSyncKind::Config => "config.toml",
+            CodexSyncKind::Auth => "auth.json",
+        },
+        profile_path: profile_path.to_path_buf(),
+        content: target_content,
+    }))
 }
 
 fn ensure_codex_runtime_dirs(paths: &ResolvedPaths) -> Result<()> {
