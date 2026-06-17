@@ -1,4 +1,6 @@
 use std::fs;
+#[cfg(unix)]
+use std::os::unix::fs::PermissionsExt;
 
 use cc_switch::{
     ResolvedPaths, collect_codex_profiles, read_codex_before_name, read_codex_current_name,
@@ -283,6 +285,45 @@ fn use_codex_profile_syncs_only_changed_auth_file() {
     );
 }
 
+#[cfg(unix)]
+#[test]
+fn use_codex_profile_aborts_when_changed_auth_cannot_sync_back() {
+    let sandbox = Sandbox::new();
+    sandbox.write_codex_profile("openai", "model = \"gpt-5\"\n", "{\"token\":\"openai\"}");
+    sandbox.write_codex_profile("xxxcom", "model = \"mirror\"\n", "{\"token\":\"xxx\"}");
+
+    use_codex_profile(&sandbox.paths, "openai").unwrap();
+    fs::write(
+        &sandbox.paths.codex_target_auth_path,
+        "{\"token\":\"refreshed\"}",
+    )
+    .unwrap();
+
+    let openai_dir = sandbox.paths.codex_profiles_dir.join("openai");
+    fs::set_permissions(&openai_dir, fs::Permissions::from_mode(0o500)).unwrap();
+    let result = use_codex_profile(&sandbox.paths, "xxxcom");
+    fs::set_permissions(&openai_dir, fs::Permissions::from_mode(0o700)).unwrap();
+
+    let error = result.unwrap_err().to_string();
+    assert!(error.contains("Failed to sync current Codex auth.json"));
+    assert_eq!(
+        fs::read_to_string(sandbox.paths.codex_auth_path("openai")).unwrap(),
+        "{\"token\":\"openai\"}"
+    );
+    assert_eq!(
+        fs::read_to_string(&sandbox.paths.codex_target_config_path).unwrap(),
+        "model = \"gpt-5\"\n"
+    );
+    assert_eq!(
+        fs::read_to_string(&sandbox.paths.codex_target_auth_path).unwrap(),
+        "{\"token\":\"refreshed\"}"
+    );
+    assert_eq!(
+        read_codex_current_name(&sandbox.paths).unwrap().as_deref(),
+        Some("openai")
+    );
+}
+
 #[test]
 fn use_codex_profile_skips_sync_when_current_record_is_missing_or_invalid() {
     let sandbox = Sandbox::new();
@@ -337,6 +378,33 @@ fn use_codex_profile_aborts_when_active_auth_json_is_invalid() {
     assert_eq!(
         fs::read_to_string(&sandbox.paths.codex_target_auth_path).unwrap(),
         "{ invalid"
+    );
+    assert_eq!(
+        read_codex_current_name(&sandbox.paths).unwrap().as_deref(),
+        Some("openai")
+    );
+}
+
+#[test]
+fn use_codex_profile_aborts_when_target_profile_auth_json_is_invalid() {
+    let sandbox = Sandbox::new();
+    sandbox.write_codex_profile("openai", "model = \"gpt-5\"\n", "{\"token\":\"openai\"}");
+    sandbox.write_codex_profile("xxxcom", "model = \"mirror\"\n", "{ invalid");
+
+    use_codex_profile(&sandbox.paths, "openai").unwrap();
+
+    let error = use_codex_profile(&sandbox.paths, "xxxcom")
+        .unwrap_err()
+        .to_string();
+
+    assert!(error.contains("Invalid JSON") || error.contains("expected"));
+    assert_eq!(
+        fs::read_to_string(&sandbox.paths.codex_target_config_path).unwrap(),
+        "model = \"gpt-5\"\n"
+    );
+    assert_eq!(
+        fs::read_to_string(&sandbox.paths.codex_target_auth_path).unwrap(),
+        "{\"token\":\"openai\"}"
     );
     assert_eq!(
         read_codex_current_name(&sandbox.paths).unwrap().as_deref(),

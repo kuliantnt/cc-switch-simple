@@ -238,6 +238,8 @@ fn switch_codex_profile(
         .with_context(|| format!("Failed to read {}", profile_config_path.display()))?;
     let auth_content = fs::read(profile_auth_path)
         .with_context(|| format!("Failed to read {}", profile_auth_path.display()))?;
+    serde_json::from_slice::<serde_json::Value>(&auth_content)
+        .with_context(|| format!("Invalid JSON: {}", profile_auth_path.display()))?;
     write_bytes_to_target(&config_content, &paths.codex_target_config_path)?;
     write_bytes_to_target(&auth_content, &paths.codex_target_auth_path)?;
     write_bytes_to_target(name.as_bytes(), &paths.codex_current_path)?;
@@ -260,33 +262,31 @@ fn sync_back_current_codex_profile(paths: &ResolvedPaths) -> Result<()> {
         return Ok(());
     }
 
-    let mut changes = Vec::new();
-    if let Some(change) = pending_sync_file(
+    let config_change = pending_sync_file(
         &paths.codex_target_config_path,
         &profile_config_path,
         CodexSyncKind::Config,
-    )? {
-        changes.push(change);
-    }
-    if let Some(change) = pending_sync_file(
+    )?;
+    let auth_change = pending_sync_file(
         &paths.codex_target_auth_path,
         &profile_auth_path,
         CodexSyncKind::Auth,
-    )? {
-        changes.push(change);
+    )?;
+
+    if let Some(change) = auth_change {
+        write_bytes_to_target(&change.content, &change.profile_path).with_context(|| {
+            format!("Failed to sync current Codex auth.json for profile \"{name}\"")
+        })?;
+        println!("Synced current Codex profile file: {}", change.file_name);
     }
 
-    if changes.is_empty() {
-        return Ok(());
-    }
-
-    if should_sync_back(&format!(
-        "Detected changes in current Codex profile \"{name}\". Sync back before switching? [y/N] "
-    ))? {
-        for change in changes {
-            write_bytes_to_target(&change.content, &change.profile_path)?;
-            println!("Synced current Codex profile file: {}", change.file_name);
-        }
+    if let Some(change) = config_change
+        && should_sync_back(&format!(
+            "Detected changes in current Codex profile \"{name}\". Sync back before switching? [y/N] "
+        ))?
+    {
+        write_bytes_to_target(&change.content, &change.profile_path)?;
+        println!("Synced current Codex profile file: {}", change.file_name);
         println!("Synced current Codex profile: {}", name);
     }
 

@@ -101,6 +101,7 @@ Codex 模式会一起切换这两个文件：
 
 - 选中的预设目录必须同时包含 `config.toml` 和 `auth.json`
 - 覆盖前会分别备份当前目标文件
+- 切换离开当前 Codex 预设前，如果 `${CODEX_HOME:-$HOME/.codex}/auth.json` 有变化，会自动保存回当前预设；ChatGPT Plus 登录状态会随 profile 自动更新
 - `cc-switch` 不会输出 API Key 或 token 内容
 
 自动创建规则：
@@ -189,7 +190,7 @@ wire_api = "responses"
 }
 ```
 
-切换时，`cc-switch` 会先备份，再覆盖 `${CODEX_HOME:-$HOME/.codex}/config.toml` 和 `${CODEX_HOME:-$HOME/.codex}/auth.json`。
+切换时，`cc-switch` 会先备份，再覆盖 `${CODEX_HOME:-$HOME/.codex}/config.toml` 和 `${CODEX_HOME:-$HOME/.codex}/auth.json`。如果 Codex 或 ChatGPT Plus 登录流程更新了当前 `auth.json`，下次切换离开该预设时会自动写回 `~/.cc-switch-simple/codex/<name>/auth.json`，无需手动同步。
 
 ## 使用
 

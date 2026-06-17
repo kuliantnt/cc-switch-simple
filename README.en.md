@@ -101,6 +101,7 @@ Codex mode switches both files together:
 
 - the selected preset must contain both `config.toml` and `auth.json`
 - existing target files are backed up before overwrite
+- before switching away from the current Codex preset, changed `${CODEX_HOME:-$HOME/.codex}/auth.json` is saved back to that preset automatically; ChatGPT Plus login state is updated with the profile
 - `cc-switch` does not print API keys or token values
 
 Auto-creation rules:
@@ -189,7 +190,7 @@ wire_api = "responses"
 }
 ```
 
-When switching, `cc-switch` backs up and overwrites both `${CODEX_HOME:-$HOME/.codex}/config.toml` and `${CODEX_HOME:-$HOME/.codex}/auth.json`.
+When switching, `cc-switch` backs up and overwrites both `${CODEX_HOME:-$HOME/.codex}/config.toml` and `${CODEX_HOME:-$HOME/.codex}/auth.json`. If Codex or ChatGPT Plus login refreshes the active `auth.json`, the next switch away from that preset automatically writes it back to `~/.cc-switch-simple/codex/<name>/auth.json`; no manual sync is required.
 
 ## Usage
 
