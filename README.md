@@ -239,4 +239,4 @@ cargo test
 
 ## 社区
 
-有问题、建议，或想一起折腾？欢迎来 **[linux.do](https://linux.do/t/topic/2279788)** 社区交流反馈。
+有问题、建议，或想一起折腾？欢迎来 **[雪主任的工坊](https://qm.qq.com/q/sXg1SaKJXi)** 社区交流反馈。
