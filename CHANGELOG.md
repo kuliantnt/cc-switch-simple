@@ -2,6 +2,14 @@
 
 本文件记录 `cc-switch` / `cx-switch` 的每个发布版本。版本号遵循 [语义化版本](https://semver.org/lang/zh-CN/)。
 
+## [0.1.8] - 2026-07-31
+
+### 变更
+
+- DeepSeek 预设改为直连官方 API：`base_url` 指向 `https://api.deepseek.com/v1`，不再依赖本地 moonbridge 代理
+- DeepSeek 预设改用 OpenAI Responses API（`wire_api = "responses"`），兼容 Codex CLI 对 `chat/completions` 的移除
+- DeepSeek 预设默认模型改为 `deepseek-v4-flash`（DeepSeek V4 Flash）
+
 ## [0.1.7] - 2026-07-31
 
 ### 新增
