@@ -9,6 +9,36 @@ use cc_switch::{
 use tempfile::TempDir;
 
 #[test]
+fn bundled_deepseek_preset_is_complete_and_redacted() {
+    let preset_dir = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("codex/deepseek");
+    let config: toml::Value =
+        toml::from_str(&fs::read_to_string(preset_dir.join("config.toml")).unwrap()).unwrap();
+    let auth: serde_json::Value =
+        serde_json::from_str(&fs::read_to_string(preset_dir.join("auth.json")).unwrap()).unwrap();
+    let catalog: serde_json::Value =
+        serde_json::from_str(&fs::read_to_string(preset_dir.join("models_catalog.json")).unwrap())
+            .unwrap();
+
+    assert_eq!(
+        config.get("model").and_then(toml::Value::as_str),
+        Some("moonbridge")
+    );
+    assert_eq!(
+        config
+            .get("model_catalog_json")
+            .and_then(toml::Value::as_str),
+        Some("models_catalog.json")
+    );
+    assert!(auth.as_object().is_some_and(serde_json::Map::is_empty));
+    assert!(
+        catalog
+            .get("models")
+            .and_then(serde_json::Value::as_array)
+            .is_some_and(|models| !models.is_empty())
+    );
+}
+
+#[test]
 fn collect_codex_profiles_returns_sorted_names() {
     let sandbox = Sandbox::new();
     sandbox.write_codex_profile("zeta", "model = \"zeta\"\n", "{\"token\":\"zeta\"}");
@@ -82,6 +112,65 @@ fn use_codex_profile_copies_config_and_records_current() {
         backup_names
             .iter()
             .any(|name| name.starts_with("auth.json.") && name.ends_with(".bak"))
+    );
+}
+
+#[test]
+fn use_codex_profile_copies_optional_models_catalog_and_backups_old_one() {
+    let sandbox = Sandbox::new();
+    sandbox.write_codex_profile("deepseek", "model = \"deepseek-v4-pro\"\n", "{}");
+    fs::write(
+        sandbox
+            .paths
+            .codex_profile_path("deepseek")
+            .with_file_name("models_catalog.json"),
+        r#"{"models":[{"slug":"deepseek-v4-pro"}]}"#,
+    )
+    .unwrap();
+    fs::write(
+        &sandbox.paths.codex_target_models_catalog_path,
+        r#"{"models":[{"slug":"old-model"}]}"#,
+    )
+    .unwrap();
+
+    use_codex_profile(&sandbox.paths, "deepseek").unwrap();
+
+    assert_eq!(
+        fs::read_to_string(&sandbox.paths.codex_target_models_catalog_path).unwrap(),
+        r#"{"models":[{"slug":"deepseek-v4-pro"}]}"#
+    );
+    let backup_names = fs::read_dir(&sandbox.paths.codex_backups_dir)
+        .unwrap()
+        .map(|entry| entry.unwrap().file_name().into_string().unwrap())
+        .collect::<Vec<_>>();
+    assert!(
+        backup_names
+            .iter()
+            .any(|name| name.starts_with("models_catalog.json.") && name.ends_with(".bak"))
+    );
+}
+
+#[test]
+fn use_codex_profile_removes_stale_models_catalog_when_profile_has_none() {
+    let sandbox = Sandbox::new();
+    sandbox.write_codex_profile("openai", "model = \"gpt-5\"\n", "{}");
+    fs::write(
+        &sandbox.paths.codex_target_models_catalog_path,
+        r#"{"models":[{"slug":"stale-model"}]}"#,
+    )
+    .unwrap();
+
+    use_codex_profile(&sandbox.paths, "openai").unwrap();
+
+    assert!(!sandbox.paths.codex_target_models_catalog_path.exists());
+    let backup_names = fs::read_dir(&sandbox.paths.codex_backups_dir)
+        .unwrap()
+        .map(|entry| entry.unwrap().file_name().into_string().unwrap())
+        .collect::<Vec<_>>();
+    assert!(
+        backup_names
+            .iter()
+            .any(|name| name.starts_with("models_catalog.json.") && name.ends_with(".bak"))
     );
 }
 
@@ -572,6 +661,7 @@ impl Sandbox {
         let codex_target_dir = temp_dir.path().join(".codex");
         let codex_target_config_path = codex_target_dir.join("config.toml");
         let codex_target_auth_path = codex_target_dir.join("auth.json");
+        let codex_target_models_catalog_path = codex_target_dir.join("models_catalog.json");
 
         fs::create_dir_all(&profiles_dir).unwrap();
         fs::create_dir_all(&backups_dir).unwrap();
@@ -595,6 +685,7 @@ impl Sandbox {
                 codex_backups_dir,
                 codex_target_config_path,
                 codex_target_auth_path,
+                codex_target_models_catalog_path,
                 max_backup_files: 5,
             },
             _temp_dir: temp_dir,

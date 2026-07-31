@@ -1,12 +1,35 @@
 use std::fs;
 
 use cc_switch::{
-    ResolvedPaths, backup_file_name, collect_profiles, create_backup, detect_current_profile_index,
-    next_profile_index, read_before_profile_name, read_current_profile_name, use_before_profile,
-    use_next_profile, use_profile,
+    Cli, CodexCli, CodexCommands, Commands, ResolvedPaths, backup_file_name, collect_profiles,
+    create_backup, detect_current_profile_index, next_profile_index, read_before_profile_name,
+    read_current_profile_name, use_before_profile, use_next_profile, use_profile,
 };
+use clap::Parser;
 use tempfile::TempDir;
 use time::macros::datetime;
+
+#[test]
+fn cx_switch_parser_accepts_direct_codex_commands() {
+    let cli = CodexCli::try_parse_from(["cx-switch", "use", "deepseek"]).unwrap();
+
+    assert!(matches!(
+        cli.command,
+        CodexCommands::Use { name } if name == "deepseek"
+    ));
+}
+
+#[test]
+fn cc_switch_keeps_nested_codex_commands() {
+    let cli = Cli::try_parse_from(["cc-switch", "cx", "list"]).unwrap();
+
+    assert!(matches!(
+        cli.command,
+        Commands::Cx {
+            command: CodexCommands::List
+        }
+    ));
+}
 
 #[test]
 fn collect_profiles_returns_sorted_names() {
@@ -371,6 +394,7 @@ impl Sandbox {
         let codex_target_dir = temp_dir.path().join(".codex");
         let codex_target_config_path = codex_target_dir.join("config.toml");
         let codex_target_auth_path = codex_target_dir.join("auth.json");
+        let codex_target_models_catalog_path = codex_target_dir.join("models_catalog.json");
 
         fs::create_dir_all(&profiles_dir).unwrap();
         fs::create_dir_all(&backups_dir).unwrap();
@@ -394,6 +418,7 @@ impl Sandbox {
                 codex_backups_dir,
                 codex_target_config_path,
                 codex_target_auth_path,
+                codex_target_models_catalog_path,
                 max_backup_files: 5,
             },
             _temp_dir: temp_dir,

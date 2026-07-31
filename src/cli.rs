@@ -7,6 +7,7 @@
 //! - `next`    按文件名排序轮换到下一个 profile
 //! - `before`  切换到最近一次成功切换前的 profile
 //! - `doctor`  诊断：检查目录、配置路径、JSON 有效性
+//! - `cx-switch` 直接切换 Codex 预设
 
 use clap::{Parser, Subcommand};
 
@@ -22,6 +23,19 @@ pub struct Cli {
     pub command: Commands,
 }
 
+/// `cx-switch` 的直接命令行入口。
+#[derive(Debug, Parser)]
+#[command(
+    name = "cx-switch",
+    version,
+    about = "Codex profile switcher",
+    arg_required_else_help = true
+)]
+pub struct CodexCli {
+    #[command(subcommand)]
+    pub command: CodexCommands,
+}
+
 #[derive(Debug, Subcommand)]
 pub enum Commands {
     /// 列出所有可用 profile，当前匹配到的用 `*` 标记。
@@ -34,7 +48,7 @@ pub enum Commands {
     Next,
     /// 切换到最近一次成功切换前的 profile。
     Before,
-    /// 切换 Codex 预设（`config.toml` + `auth.json`）。
+    /// 切换 Codex 预设（`config.toml` + `auth.json`，可选 `models_catalog.json`）。
     Cx {
         #[command(subcommand)]
         command: CodexCommands,
@@ -49,7 +63,7 @@ pub enum CodexCommands {
     List,
     /// 显示当前选中的 Codex 预设。
     Current,
-    /// 切换到指定名称的 Codex 预设（同时写入 `config.toml` 和 `auth.json`）。
+    /// 切换到指定名称的 Codex 预设（同时写入配置、认证和可选模型目录）。
     Use { name: String },
     /// 按名称排序轮换到下一个 Codex 预设。
     Next,

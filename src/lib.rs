@@ -41,7 +41,7 @@ use clap::Parser;
 use serde_json::Value;
 use time::OffsetDateTime;
 
-pub use cli::{Cli, CodexCommands, Commands};
+pub use cli::{Cli, CodexCli, CodexCommands, Commands};
 pub use codex::{
     CodexProfileEntry, collect_codex_profiles, list_codex_profiles, read_codex_before_name,
     read_codex_current_name, show_codex_current, use_before_codex_profile, use_codex_profile,
@@ -55,20 +55,36 @@ pub fn run() -> Result<()> {
     let cli = Cli::parse();
     let paths = PathResolver::new()?.resolve()?;
 
-    match cli.command {
-        Commands::List => list_profiles(&paths),
-        Commands::Current => show_current(&paths),
-        Commands::Use { name } => use_profile(&paths, &name),
-        Commands::Next => use_next_profile(&paths),
-        Commands::Before => use_before_profile(&paths),
-        Commands::Cx { command } => match command {
-            CodexCommands::List => list_codex_profiles(&paths),
-            CodexCommands::Current => show_codex_current(&paths),
-            CodexCommands::Use { name } => use_codex_profile(&paths, &name),
-            CodexCommands::Next => use_next_codex_profile(&paths),
-            CodexCommands::Before => use_before_codex_profile(&paths),
-        },
-        Commands::Doctor => doctor(&paths),
+    run_command(&paths, cli.command)
+}
+
+/// 解析并运行独立的 `cx-switch` Codex 命令。
+pub fn run_codex() -> Result<()> {
+    let cli = CodexCli::parse();
+    let paths = PathResolver::new()?.resolve()?;
+
+    run_codex_command(&paths, cli.command)
+}
+
+fn run_command(paths: &ResolvedPaths, command: Commands) -> Result<()> {
+    match command {
+        Commands::List => list_profiles(paths),
+        Commands::Current => show_current(paths),
+        Commands::Use { name } => use_profile(paths, &name),
+        Commands::Next => use_next_profile(paths),
+        Commands::Before => use_before_profile(paths),
+        Commands::Cx { command } => run_codex_command(paths, command),
+        Commands::Doctor => doctor(paths),
+    }
+}
+
+fn run_codex_command(paths: &ResolvedPaths, command: CodexCommands) -> Result<()> {
+    match command {
+        CodexCommands::List => list_codex_profiles(paths),
+        CodexCommands::Current => show_codex_current(paths),
+        CodexCommands::Use { name } => use_codex_profile(paths, &name),
+        CodexCommands::Next => use_next_codex_profile(paths),
+        CodexCommands::Before => use_before_codex_profile(paths),
     }
 }
 
