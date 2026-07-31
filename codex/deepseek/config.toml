@@ -10,4 +10,4 @@ sandbox_mode = "workspace-write"
 [model_providers.deepseek]
 name = "DeepSeek"
 base_url = "https://api.deepseek.com/v1"
-wire_api = "chat"
+wire_api = "responses"
