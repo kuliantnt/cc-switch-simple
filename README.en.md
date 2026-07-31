@@ -4,8 +4,6 @@
 
 # cc-switch
 
-[toc]
-
 `cc-switch` is a Rust-based cross-platform CLI with two switching modes:
 
 - Claude Code JSON profile switching
@@ -152,9 +150,25 @@ The repo also ships copy-ready Codex preset examples in `codex/`:
 - `codex/xxxcom/config.toml`
 - `codex/xxxcom/auth.json`
 
-When using DeepSeek's Moon Bridge setup, place its generated `models_catalog.json` in the corresponding preset directory. It contains Codex model capability metadata, not an API key.
+The bundled `codex/deepseek/` preset connects directly to the official DeepSeek API:
 
-The bundled `codex/deepseek/` preset provides a Moon Bridge configuration without a key. Start Moon Bridge and configure its DeepSeek API key as described in the DeepSeek guide, copy this preset, then run `cx-switch use deepseek` or `cc-switch cx use deepseek`.
+```toml
+model = "deepseek-v4-flash"
+model_provider = "deepseek"
+model_catalog_json = "models_catalog.json"
+model_context_window = 1000000
+model_auto_compact_token_limit = 900000
+model_reasoning_effort = "high"
+approval_policy = "on-request"
+sandbox_mode = "workspace-write"
+
+[model_providers.deepseek]
+name = "DeepSeek"
+base_url = "https://api.deepseek.com/v1"
+wire_api = "responses"
+```
+
+`codex/deepseek/models_catalog.json` holds Codex model capability metadata for the model picker; it is not an API key file.
 
 Create the preset directories, then copy the examples over:
 
@@ -170,6 +184,8 @@ cp codex/deepseek/models_catalog.json ~/.cc-switch-simple/codex/deepseek/models_
 cp codex/xxxcom/config.toml ~/.cc-switch-simple/codex/xxxcom/config.toml
 cp codex/xxxcom/auth.json ~/.cc-switch-simple/codex/xxxcom/auth.json
 ```
+
+After copying, put your DeepSeek API key in `~/.cc-switch-simple/codex/deepseek/auth.json`, then run `cx-switch use deepseek` or `cc-switch cx use deepseek`.
 
 After copying, edit the files as needed. For example, `~/.cc-switch-simple/codex/openai/config.toml`:
 

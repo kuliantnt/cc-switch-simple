@@ -4,8 +4,6 @@
 
 # cc-switch
 
-[toc]
-
 `cc-switch` 是一个 Rust 编写的跨平台 CLI，现在同时支持两种切换模式：
 
 - Claude Code JSON profile 切换
@@ -152,9 +150,25 @@ cp profiles/local-test.template.json ~/.cc-switch-simple/profiles/local-test.jso
 - `codex/xxxcom/config.toml`
 - `codex/xxxcom/auth.json`
 
-如果使用 DeepSeek 文档中的 Moon Bridge，生成的 `models_catalog.json` 可以放入对应预设目录；它用于 Codex 的模型能力和模型选择器，不是 API Key 文件。
+仓库内置的 `codex/deepseek/` 预设已配置为直连 DeepSeek 官方 API：
 
-仓库内置的 `codex/deepseek/` 预设已经提供了一个不含密钥的 Moon Bridge 配置。先按 DeepSeek 文档启动 Moon Bridge 并配置 API Key，再复制该预设，最后执行 `cx-switch use deepseek` 或 `cc-switch cx use deepseek`。
+```toml
+model = "deepseek-v4-flash"
+model_provider = "deepseek"
+model_catalog_json = "models_catalog.json"
+model_context_window = 1000000
+model_auto_compact_token_limit = 900000
+model_reasoning_effort = "high"
+approval_policy = "on-request"
+sandbox_mode = "workspace-write"
+
+[model_providers.deepseek]
+name = "DeepSeek"
+base_url = "https://api.deepseek.com/v1"
+wire_api = "responses"
+```
+
+`codex/deepseek/models_catalog.json` 用于 Codex 的模型能力和模型选择器，不是 API Key 文件。
 
 先创建预设目录，再把示例复制过去：
 
@@ -170,6 +184,8 @@ cp codex/deepseek/models_catalog.json ~/.cc-switch-simple/codex/deepseek/models_
 cp codex/xxxcom/config.toml ~/.cc-switch-simple/codex/xxxcom/config.toml
 cp codex/xxxcom/auth.json ~/.cc-switch-simple/codex/xxxcom/auth.json
 ```
+
+复制后，在 `~/.cc-switch-simple/codex/deepseek/auth.json` 填入你的 DeepSeek API Key，再执行 `cx-switch use deepseek` 或 `cc-switch cx use deepseek`。
 
 复制后可按需编辑。例如 `~/.cc-switch-simple/codex/openai/config.toml`：
 
