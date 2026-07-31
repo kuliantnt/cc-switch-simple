@@ -1,4 +1,5 @@
 use std::fs;
+use std::process::Command;
 
 use cc_switch::{
     Cli, CodexCli, CodexCommands, Commands, ResolvedPaths, backup_file_name, collect_profiles,
@@ -17,6 +18,18 @@ fn cx_switch_parser_accepts_direct_codex_commands() {
         cli.command,
         CodexCommands::Use { name } if name == "deepseek"
     ));
+}
+
+#[test]
+fn cx_switch_binary_accepts_help() {
+    let output = Command::new(env!("CARGO_BIN_EXE_cx-switch"))
+        .arg("--help")
+        .output()
+        .unwrap();
+
+    assert!(output.status.success());
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    assert!(stdout.contains("Codex profile switcher"));
 }
 
 #[test]

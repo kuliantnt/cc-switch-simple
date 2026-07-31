@@ -248,7 +248,6 @@ fn switch_codex_profile(
     )?;
 
     validate_target_auth_json(paths)?;
-    validate_target_models_catalog_json(paths)?;
 
     let config_content = fs::read(profile_config_path)
         .with_context(|| format!("Failed to read {}", profile_config_path.display()))?;
@@ -393,26 +392,6 @@ fn validate_target_auth_json(paths: &ResolvedPaths) -> Result<()> {
         .with_context(|| format!("Failed to read {}", paths.codex_target_auth_path.display()))?;
     serde_json::from_slice::<serde_json::Value>(&content)
         .with_context(|| format!("Invalid JSON: {}", paths.codex_target_auth_path.display()))?;
-    Ok(())
-}
-
-fn validate_target_models_catalog_json(paths: &ResolvedPaths) -> Result<()> {
-    if !paths.codex_target_models_catalog_path.is_file() {
-        return Ok(());
-    }
-
-    let content = fs::read(&paths.codex_target_models_catalog_path).with_context(|| {
-        format!(
-            "Failed to read {}",
-            paths.codex_target_models_catalog_path.display()
-        )
-    })?;
-    serde_json::from_slice::<serde_json::Value>(&content).with_context(|| {
-        format!(
-            "Invalid JSON: {}",
-            paths.codex_target_models_catalog_path.display()
-        )
-    })?;
     Ok(())
 }
 
