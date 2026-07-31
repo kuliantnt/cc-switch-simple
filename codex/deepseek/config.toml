@@ -1,4 +1,4 @@
-model = "deepseek-v4-pro"
+model = "deepseek-v4-flash"
 model_provider = "deepseek"
 model_catalog_json = "models_catalog.json"
 model_context_window = 1000000
