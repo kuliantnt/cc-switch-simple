@@ -9,6 +9,36 @@ use cc_switch::{
 use tempfile::TempDir;
 
 #[test]
+fn bundled_deepseek_preset_is_complete_and_redacted() {
+    let preset_dir = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("codex/deepseek");
+    let config: toml::Value =
+        toml::from_str(&fs::read_to_string(preset_dir.join("config.toml")).unwrap()).unwrap();
+    let auth: serde_json::Value =
+        serde_json::from_str(&fs::read_to_string(preset_dir.join("auth.json")).unwrap()).unwrap();
+    let catalog: serde_json::Value =
+        serde_json::from_str(&fs::read_to_string(preset_dir.join("models_catalog.json")).unwrap())
+            .unwrap();
+
+    assert_eq!(
+        config.get("model").and_then(toml::Value::as_str),
+        Some("moonbridge")
+    );
+    assert_eq!(
+        config
+            .get("model_catalog_json")
+            .and_then(toml::Value::as_str),
+        Some("models_catalog.json")
+    );
+    assert!(auth.as_object().is_some_and(serde_json::Map::is_empty));
+    assert!(
+        catalog
+            .get("models")
+            .and_then(serde_json::Value::as_array)
+            .is_some_and(|models| !models.is_empty())
+    );
+}
+
+#[test]
 fn collect_codex_profiles_returns_sorted_names() {
     let sandbox = Sandbox::new();
     sandbox.write_codex_profile("zeta", "model = \"zeta\"\n", "{\"token\":\"zeta\"}");
@@ -82,6 +112,155 @@ fn use_codex_profile_copies_config_and_records_current() {
         backup_names
             .iter()
             .any(|name| name.starts_with("auth.json.") && name.ends_with(".bak"))
+    );
+}
+
+#[test]
+fn use_codex_profile_copies_optional_models_catalog_and_backups_old_one() {
+    let sandbox = Sandbox::new();
+    sandbox.write_codex_profile("deepseek", "model = \"deepseek-v4-pro\"\n", "{}");
+    fs::write(
+        sandbox
+            .paths
+            .codex_profile_path("deepseek")
+            .with_file_name("models_catalog.json"),
+        r#"{"models":[{"slug":"deepseek-v4-pro"}]}"#,
+    )
+    .unwrap();
+    fs::write(
+        &sandbox.paths.codex_target_models_catalog_path,
+        r#"{"models":[{"slug":"old-model"}]}"#,
+    )
+    .unwrap();
+
+    use_codex_profile(&sandbox.paths, "deepseek").unwrap();
+
+    assert_eq!(
+        fs::read_to_string(&sandbox.paths.codex_target_models_catalog_path).unwrap(),
+        r#"{"models":[{"slug":"deepseek-v4-pro"}]}"#
+    );
+    let backup_names = fs::read_dir(&sandbox.paths.codex_backups_dir)
+        .unwrap()
+        .map(|entry| entry.unwrap().file_name().into_string().unwrap())
+        .collect::<Vec<_>>();
+    assert!(
+        backup_names
+            .iter()
+            .any(|name| name.starts_with("models_catalog.json.") && name.ends_with(".bak"))
+    );
+}
+
+#[test]
+fn use_codex_profile_removes_stale_models_catalog_when_profile_has_none() {
+    let sandbox = Sandbox::new();
+    sandbox.write_codex_profile("openai", "model = \"gpt-5\"\n", "{}");
+    fs::write(
+        &sandbox.paths.codex_target_models_catalog_path,
+        r#"{"models":[{"slug":"stale-model"}]}"#,
+    )
+    .unwrap();
+
+    use_codex_profile(&sandbox.paths, "openai").unwrap();
+
+    assert!(!sandbox.paths.codex_target_models_catalog_path.exists());
+    let backup_names = fs::read_dir(&sandbox.paths.codex_backups_dir)
+        .unwrap()
+        .map(|entry| entry.unwrap().file_name().into_string().unwrap())
+        .collect::<Vec<_>>();
+    assert!(
+        backup_names
+            .iter()
+            .any(|name| name.starts_with("models_catalog.json.") && name.ends_with(".bak"))
+    );
+}
+
+#[test]
+fn use_codex_profile_replaces_invalid_active_catalog_when_target_has_none() {
+    let sandbox = Sandbox::new();
+    sandbox.write_codex_profile("old", "model = \"old\"\n", "{\"token\":\"old\"}");
+    sandbox.write_codex_profile("new", "model = \"new\"\n", "{\"token\":\"new\"}");
+    fs::write(&sandbox.paths.codex_current_path, "old").unwrap();
+    fs::write(&sandbox.paths.codex_target_config_path, "model = \"old\"\n").unwrap();
+    fs::write(&sandbox.paths.codex_target_auth_path, "{\"token\":\"old\"}").unwrap();
+    let invalid_catalog = b"{ invalid catalog\xff\n";
+    fs::write(
+        &sandbox.paths.codex_target_models_catalog_path,
+        invalid_catalog,
+    )
+    .unwrap();
+
+    use_codex_profile(&sandbox.paths, "new").unwrap();
+
+    assert_eq!(
+        fs::read_to_string(&sandbox.paths.codex_target_config_path).unwrap(),
+        "model = \"new\"\n"
+    );
+    assert_eq!(
+        fs::read_to_string(&sandbox.paths.codex_target_auth_path).unwrap(),
+        "{\"token\":\"new\"}"
+    );
+    assert!(!sandbox.paths.codex_target_models_catalog_path.exists());
+    assert_eq!(
+        read_codex_current_name(&sandbox.paths).unwrap().as_deref(),
+        Some("new")
+    );
+
+    let catalog_backup = fs::read_dir(&sandbox.paths.codex_backups_dir)
+        .unwrap()
+        .map(|entry| entry.unwrap())
+        .find(|entry| {
+            entry.file_name().to_str().is_some_and(|name| {
+                name.starts_with("models_catalog.json.") && name.ends_with(".bak")
+            })
+        })
+        .expect("model catalog backup should exist")
+        .path();
+    assert_eq!(fs::read(catalog_backup).unwrap(), invalid_catalog);
+}
+
+#[test]
+fn use_codex_profile_rejects_invalid_target_catalog_without_changing_active_state() {
+    let sandbox = Sandbox::new();
+    sandbox.write_codex_profile("old", "model = \"old\"\n", "{\"token\":\"old\"}");
+    sandbox.write_codex_profile("new", "model = \"new\"\n", "{\"token\":\"new\"}");
+    fs::write(
+        sandbox
+            .paths
+            .codex_profile_path("new")
+            .with_file_name("models_catalog.json"),
+        "{ invalid preset catalog",
+    )
+    .unwrap();
+    fs::write(&sandbox.paths.codex_current_path, "old").unwrap();
+    fs::write(&sandbox.paths.codex_target_config_path, "model = \"old\"\n").unwrap();
+    fs::write(&sandbox.paths.codex_target_auth_path, "{\"token\":\"old\"}").unwrap();
+    let active_catalog = b"{ active catalog remains\xff\n";
+    fs::write(
+        &sandbox.paths.codex_target_models_catalog_path,
+        active_catalog,
+    )
+    .unwrap();
+
+    let error = use_codex_profile(&sandbox.paths, "new")
+        .unwrap_err()
+        .to_string();
+
+    assert!(error.contains("Invalid JSON") || error.contains("expected"));
+    assert_eq!(
+        fs::read_to_string(&sandbox.paths.codex_target_config_path).unwrap(),
+        "model = \"old\"\n"
+    );
+    assert_eq!(
+        fs::read_to_string(&sandbox.paths.codex_target_auth_path).unwrap(),
+        "{\"token\":\"old\"}"
+    );
+    assert_eq!(
+        fs::read(&sandbox.paths.codex_target_models_catalog_path).unwrap(),
+        active_catalog
+    );
+    assert_eq!(
+        read_codex_current_name(&sandbox.paths).unwrap().as_deref(),
+        Some("old")
     );
 }
 
@@ -572,6 +751,7 @@ impl Sandbox {
         let codex_target_dir = temp_dir.path().join(".codex");
         let codex_target_config_path = codex_target_dir.join("config.toml");
         let codex_target_auth_path = codex_target_dir.join("auth.json");
+        let codex_target_models_catalog_path = codex_target_dir.join("models_catalog.json");
 
         fs::create_dir_all(&profiles_dir).unwrap();
         fs::create_dir_all(&backups_dir).unwrap();
@@ -595,6 +775,7 @@ impl Sandbox {
                 codex_backups_dir,
                 codex_target_config_path,
                 codex_target_auth_path,
+                codex_target_models_catalog_path,
                 max_backup_files: 5,
             },
             _temp_dir: temp_dir,

@@ -9,7 +9,7 @@
 `cc-switch` is a Rust-based cross-platform CLI with two switching modes:
 
 - Claude Code JSON profile switching
-- Codex `config.toml` preset switching
+- Codex `config.toml` / `auth.json` preset switching with optional `models_catalog.json`
 
 The tool stays intentionally small:
 
@@ -39,6 +39,16 @@ cc-switch cx current
 cc-switch cx use <name>
 cc-switch cx next
 cc-switch cx before
+```
+
+You can also use the standalone Codex command:
+
+```text
+cx-switch list
+cx-switch current
+cx-switch use <name>
+cx-switch next
+cx-switch before
 ```
 
 Behavior:
@@ -83,7 +93,7 @@ Notes:
 
 - `[backups].max_files` defaults to `5`
 - `max_files` must be greater than `0`
-- it applies to both Claude and Codex backup retention; for Codex, `config.toml` and `auth.json` each keep up to `max_files` backups
+- it applies to both Claude and Codex backup retention; for Codex, `config.toml`, `auth.json`, and any present `models_catalog.json` each keep up to `max_files` backups
 - relative `settings_path` values are resolved from the runtime config directory
 
 Codex files:
@@ -96,19 +106,21 @@ Codex files:
 - backup directory: `~/.cc-switch-simple/backups/codex/`
 - active config: `${CODEX_HOME:-$HOME/.codex}/config.toml`
 - active auth: `${CODEX_HOME:-$HOME/.codex}/auth.json`
+- active model catalog (optional): `${CODEX_HOME:-$HOME/.codex}/models_catalog.json`
 
-Codex mode switches both files together:
+Codex mode switches the config and auth files together and handles the optional model catalog:
 
 - the selected preset must contain both `config.toml` and `auth.json`
-- existing target files are backed up before overwrite
+- if a preset contains `models_catalog.json`, it is written during the switch; if it does not, an existing active catalog is backed up and removed
+- existing target files are backed up before overwrite or removal
 - before switching away from the current Codex preset, changed `${CODEX_HOME:-$HOME/.codex}/auth.json` is saved back to that preset automatically; ChatGPT Plus login state is updated with the profile
-- `cc-switch` does not print API keys or token values
+- `cc-switch` and `cx-switch` do not print API keys or token values
 
 Auto-creation rules:
 
 - Claude-related commands create `~/.cc-switch-simple/`, `profiles/`, and `backups/`
-- `cc-switch cx use <name>` creates `~/.cc-switch-simple/codex/`, `~/.cc-switch-simple/backups/codex/`, and `${CODEX_HOME:-$HOME/.codex}/`
-- `~/.cc-switch-simple/codex/<name>/` and its `config.toml` / `auth.json` are not generated automatically and must still be prepared manually
+- `cc-switch cx use <name>` and `cx-switch use <name>` create `~/.cc-switch-simple/codex/`, `~/.cc-switch-simple/backups/codex/`, and `${CODEX_HOME:-$HOME/.codex}/`
+- `~/.cc-switch-simple/codex/<name>/` and its `config.toml` / `auth.json` / optional `models_catalog.json` are not generated automatically and must still be prepared manually
 - `cc-switch cx list` and `cc-switch cx current` only read existing files and do not initialize presets
 
 ## Claude Profile Setup
@@ -134,16 +146,27 @@ The repo also ships copy-ready Codex preset examples in `codex/`:
 
 - `codex/openai/config.toml`
 - `codex/openai/auth.json`
+- `codex/deepseek/config.toml`
+- `codex/deepseek/auth.json`
+- `codex/deepseek/models_catalog.json`
 - `codex/xxxcom/config.toml`
 - `codex/xxxcom/auth.json`
+
+When using DeepSeek's Moon Bridge setup, place its generated `models_catalog.json` in the corresponding preset directory. It contains Codex model capability metadata, not an API key.
+
+The bundled `codex/deepseek/` preset provides a Moon Bridge configuration without a key. Start Moon Bridge and configure its DeepSeek API key as described in the DeepSeek guide, copy this preset, then run `cx-switch use deepseek` or `cc-switch cx use deepseek`.
 
 Create the preset directories, then copy the examples over:
 
 ```bash
 mkdir -p ~/.cc-switch-simple/codex/openai
+mkdir -p ~/.cc-switch-simple/codex/deepseek
 mkdir -p ~/.cc-switch-simple/codex/xxxcom
 cp codex/openai/config.toml ~/.cc-switch-simple/codex/openai/config.toml
 cp codex/openai/auth.json ~/.cc-switch-simple/codex/openai/auth.json
+cp codex/deepseek/config.toml ~/.cc-switch-simple/codex/deepseek/config.toml
+cp codex/deepseek/auth.json ~/.cc-switch-simple/codex/deepseek/auth.json
+cp codex/deepseek/models_catalog.json ~/.cc-switch-simple/codex/deepseek/models_catalog.json
 cp codex/xxxcom/config.toml ~/.cc-switch-simple/codex/xxxcom/config.toml
 cp codex/xxxcom/auth.json ~/.cc-switch-simple/codex/xxxcom/auth.json
 ```
@@ -190,7 +213,7 @@ wire_api = "responses"
 }
 ```
 
-When switching, `cc-switch` backs up and overwrites both `${CODEX_HOME:-$HOME/.codex}/config.toml` and `${CODEX_HOME:-$HOME/.codex}/auth.json`. If Codex or ChatGPT Plus login refreshes the active `auth.json`, the next switch away from that preset automatically writes it back to `~/.cc-switch-simple/codex/<name>/auth.json`; no manual sync is required.
+When switching, `cc-switch` or `cx-switch` backs up and overwrites `${CODEX_HOME:-$HOME/.codex}/config.toml` and `${CODEX_HOME:-$HOME/.codex}/auth.json`, and writes or removes `models_catalog.json` according to the selected preset. If Codex or ChatGPT Plus login refreshes the active `auth.json`, the next switch away from that preset automatically writes it back to `~/.cc-switch-simple/codex/<name>/auth.json`; no manual sync is required.
 
 ## Usage
 
@@ -215,6 +238,16 @@ cc-switch cx next
 cc-switch cx before
 ```
 
+Or:
+
+```bash
+cx-switch list
+cx-switch current
+cx-switch use openai
+cx-switch next
+cx-switch before
+```
+
 ## Build And Verify
 
 Run from the repository root:
@@ -230,11 +263,12 @@ The single executable will be generated at:
 
 - Linux/macOS: `target/release/cc-switch`
 - Windows: `target\\release\\cc-switch.exe`
+- standalone Codex entrypoint: `target/release/cx-switch` (`cx-switch.exe` on Windows)
 
 ## Constraints
 
 - no Python, Node, Bash, or Zsh dependency
-- single-binary distribution
+- single-file binary distribution
 - uses `clap`, `serde`, `toml`, `directories`, and `anyhow`
 
 ## Community

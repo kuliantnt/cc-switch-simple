@@ -2,7 +2,7 @@
 
 .PHONY: help fmt fmt-check clippy test check build release install-local tag
 
-BIN := cc-switch
+BINS := cc-switch cx-switch
 PREFIX ?= $(HOME)/.local
 VERSION := $(shell cargo metadata --no-deps --format-version 1 | sed -n 's/.*"version":"\([^"]*\)".*/\1/p')
 
@@ -37,12 +37,14 @@ build:
 
 release:
 	cargo build --release
-	@printf 'Built %s\n' 'target/release/$(BIN)'
+	@for bin in $(BINS); do printf 'Built %s\n' "target/release/$$bin"; done
 
 install-local: release
 	install -d '$(PREFIX)/bin'
-	install -m 0755 'target/release/$(BIN)' '$(PREFIX)/bin/$(BIN)'
-	@printf 'Installed %s\n' '$(PREFIX)/bin/$(BIN)'
+	@for bin in $(BINS); do \
+		install -m 0755 "target/release/$$bin" "$(PREFIX)/bin/$$bin"; \
+		printf 'Installed %s\n' "$(PREFIX)/bin/$$bin"; \
+	done
 
 tag:
 	git tag 'v$(VERSION)'

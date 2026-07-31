@@ -92,7 +92,8 @@ jobs:
         run: |
           mkdir -p dist
           install -m 0755 target/release/cc-switch dist/cc-switch
-          tar -C dist -czf cc-switch-${{ runner.os }}-${{ runner.arch }}.tar.gz cc-switch
+          install -m 0755 target/release/cx-switch dist/cx-switch
+          tar -C dist -czf cc-switch-${{ runner.os }}-${{ runner.arch }}.tar.gz cc-switch cx-switch
 
       - name: Package binary (windows)
         if: matrix.os == 'windows-latest'
@@ -100,7 +101,8 @@ jobs:
         run: |
           New-Item -ItemType Directory -Force dist | Out-Null
           Copy-Item target/release/cc-switch.exe dist/cc-switch.exe
-          Compress-Archive -Path dist/cc-switch.exe -DestinationPath cc-switch-${{ runner.os }}-${{ runner.arch }}.zip
+          Copy-Item target/release/cx-switch.exe dist/cx-switch.exe
+          Compress-Archive -Path dist/cc-switch.exe, dist/cx-switch.exe -DestinationPath cc-switch-${{ runner.os }}-${{ runner.arch }}.zip
 
       - name: Upload to release
         uses: softprops/action-gh-release@v2

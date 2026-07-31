@@ -1,0 +1,13 @@
+model = "moonbridge"
+model_provider = "moonbridge"
+model_catalog_json = "models_catalog.json"
+model_context_window = 1000000
+model_auto_compact_token_limit = 900000
+model_reasoning_effort = "high"
+approval_policy = "on-request"
+sandbox_mode = "workspace-write"
+
+[model_providers.moonbridge]
+name = "Moon Bridge"
+base_url = "http://127.0.0.1:38440/v1"
+wire_api = "responses"
