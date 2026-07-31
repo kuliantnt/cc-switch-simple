@@ -21,7 +21,11 @@ fn bundled_deepseek_preset_is_complete_and_redacted() {
 
     assert_eq!(
         config.get("model").and_then(toml::Value::as_str),
-        Some("moonbridge")
+        Some("deepseek-v4-flash")
+    );
+    assert_eq!(
+        config.get("model_provider").and_then(toml::Value::as_str),
+        Some("deepseek")
     );
     assert_eq!(
         config
@@ -29,7 +33,25 @@ fn bundled_deepseek_preset_is_complete_and_redacted() {
             .and_then(toml::Value::as_str),
         Some("models_catalog.json")
     );
-    assert!(auth.as_object().is_some_and(serde_json::Map::is_empty));
+    let provider = config
+        .get("model_providers")
+        .and_then(toml::Value::as_table)
+        .and_then(|t| t.get("deepseek"))
+        .and_then(toml::Value::as_table)
+        .expect("deepseek provider block");
+    assert_eq!(
+        provider.get("base_url").and_then(toml::Value::as_str),
+        Some("https://api.deepseek.com/v1")
+    );
+    assert_eq!(
+        provider.get("wire_api").and_then(toml::Value::as_str),
+        Some("responses")
+    );
+    assert_eq!(
+        auth.get("OPENAI_API_KEY")
+            .and_then(serde_json::Value::as_str),
+        Some("<redacted>")
+    );
     assert!(
         catalog
             .get("models")
