@@ -115,6 +115,7 @@ Codex mode switches the config and auth files together and handles the optional 
 - if a preset contains `models.json`, it is written to `${CODEX_HOME:-$HOME/.codex}/models.json` during the switch; if it does not, an existing active `models.json` is backed up and removed
 - existing target files are backed up before overwrite or removal
 - before switching away from the current Codex preset, changed `${CODEX_HOME:-$HOME/.codex}/auth.json`, `models.json`, or `models_catalog.json` are saved back to that preset; ChatGPT Plus login state is updated with the profile
+- before switching away from the current Codex preset, an active `models.json` or `models_catalog.json` not yet saved to that preset is offered for first-capture sync back
 - `cc-switch` and `cx-switch` do not print API keys or token values
 
 Auto-creation rules:

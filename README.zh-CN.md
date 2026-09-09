@@ -115,6 +115,7 @@ Codex 模式会一起切换配置和认证这两个文件，并按预设处理�
 - 如果预设包含 `models.json`，切换时会一并写入 `${CODEX_HOME:-$HOME/.codex}/models.json`；如果不包含，切换时会先备份并删除活动目录中的旧 `models.json`
 - 覆盖或删除前会分别备份当前目标文件
 - 切换离开当前 Codex 预设前，如果 `${CODEX_HOME:-$HOME/.codex}/auth.json`、`models.json` 或 `models_catalog.json` 有变化，会提示保存回当前预设；ChatGPT Plus 登录状态会随 profile 自动更新
+- 切换离开当前 Codex 预设前，若活动目录中存在未保存到当前预设的 `models.json` 或 `models_catalog.json`（首次收纳场景），会提示保存回当前预设
 - `cc-switch` / `cx-switch` 不会输出 API Key 或 token 内容
 
 自动创建规则：
