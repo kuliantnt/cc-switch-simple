@@ -887,3 +887,47 @@ fn use_codex_profile_rejects_invalid_preset_models_json() {
         "{}"
     );
 }
+
+#[test]
+fn use_codex_profile_rejects_invalid_active_models_json_without_overwriting_profile() {
+    let sandbox = Sandbox::new();
+    sandbox.write_codex_profile("old", "model = \"old\"\n", "{\"token\":\"old\"}");
+    sandbox.write_codex_profile("new", "model = \"new\"\n", "{\"token\":\"new\"}");
+    sandbox.write_codex_profile_models("old", r#"{"models":[{"slug":"old-model"}]}"#);
+    fs::write(&sandbox.paths.codex_current_path, "old").unwrap();
+    fs::write(&sandbox.paths.codex_target_config_path, "model = \"old\"\n").unwrap();
+    fs::write(&sandbox.paths.codex_target_auth_path, "{\"token\":\"old\"}").unwrap();
+    let invalid_active_models = b"{ invalid active models\xff\n";
+    fs::write(
+        &sandbox.paths.codex_target_models_path,
+        invalid_active_models,
+    )
+    .unwrap();
+
+    let error = use_codex_profile(&sandbox.paths, "new")
+        .unwrap_err()
+        .to_string();
+
+    assert!(error.contains("Invalid JSON") || error.contains("expected"));
+    assert_eq!(
+        fs::read(&sandbox.paths.codex_target_models_path).unwrap(),
+        invalid_active_models
+    );
+    assert_eq!(
+        fs::read_to_string(sandbox.paths.codex_models_path("old")).unwrap(),
+        r#"{"models":[{"slug":"old-model"}]}"#
+    );
+    assert_eq!(
+        read_codex_current_name(&sandbox.paths).unwrap().as_deref(),
+        Some("old")
+    );
+    assert_eq!(
+        fs::read_to_string(&sandbox.paths.codex_target_config_path).unwrap(),
+        "model = \"old\"\n"
+    );
+    assert_eq!(
+        fs::read_to_string(&sandbox.paths.codex_target_auth_path).unwrap(),
+        "{\"token\":\"old\"}"
+    );
+    assert!(!sandbox.paths.codex_before_path.exists());
+}

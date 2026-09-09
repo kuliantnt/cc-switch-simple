@@ -560,14 +560,14 @@ fn pending_sync_file(
 
     let target_content = fs::read(target_path)
         .with_context(|| format!("Failed to read {}", target_path.display()))?;
-    if matches!(kind, CodexSyncKind::Auth | CodexSyncKind::ModelsCatalog) {
+    if !matches!(kind, CodexSyncKind::Config) {
         serde_json::from_slice::<serde_json::Value>(&target_content)
             .with_context(|| format!("Invalid JSON: {}", target_path.display()))?;
     }
 
     let profile_content = fs::read(profile_path)
         .with_context(|| format!("Failed to read {}", profile_path.display()))?;
-    if matches!(kind, CodexSyncKind::Auth | CodexSyncKind::ModelsCatalog) {
+    if !matches!(kind, CodexSyncKind::Config) {
         serde_json::from_slice::<serde_json::Value>(&profile_content)
             .with_context(|| format!("Invalid JSON: {}", profile_path.display()))?;
     }
