@@ -774,6 +774,7 @@ impl Sandbox {
         let codex_target_config_path = codex_target_dir.join("config.toml");
         let codex_target_auth_path = codex_target_dir.join("auth.json");
         let codex_target_models_catalog_path = codex_target_dir.join("models_catalog.json");
+        let codex_target_models_path = codex_target_dir.join("models.json");
 
         fs::create_dir_all(&profiles_dir).unwrap();
         fs::create_dir_all(&backups_dir).unwrap();
@@ -798,6 +799,7 @@ impl Sandbox {
                 codex_target_config_path,
                 codex_target_auth_path,
                 codex_target_models_catalog_path,
+                codex_target_models_path,
                 max_backup_files: 5,
             },
             _temp_dir: temp_dir,
@@ -810,4 +812,78 @@ impl Sandbox {
         fs::write(profile_dir.join("config.toml"), content).unwrap();
         fs::write(profile_dir.join("auth.json"), auth).unwrap();
     }
+
+    fn write_codex_profile_models(&self, name: &str, content: &str) {
+        fs::write(self.paths.codex_models_path(name), content).unwrap();
+    }
+}
+
+#[test]
+fn use_codex_profile_copies_optional_models_json_and_backups_old_one() {
+    let sandbox = Sandbox::new();
+    sandbox.write_codex_profile("deepseek", "model = \"deepseek-v4-pro\"\n", "{}");
+    sandbox.write_codex_profile_models("deepseek", r#"{"models":[{"slug":"deepseek-v4-pro"}]}"#);
+    fs::write(
+        &sandbox.paths.codex_target_models_path,
+        r#"{"models":[{"slug":"old-model"}]}"#,
+    )
+    .unwrap();
+
+    use_codex_profile(&sandbox.paths, "deepseek").unwrap();
+
+    assert_eq!(
+        fs::read_to_string(&sandbox.paths.codex_target_models_path).unwrap(),
+        r#"{"models":[{"slug":"deepseek-v4-pro"}]}"#
+    );
+    let backup_names = fs::read_dir(&sandbox.paths.codex_backups_dir)
+        .unwrap()
+        .map(|entry| entry.unwrap().file_name().into_string().unwrap())
+        .collect::<Vec<_>>();
+    assert!(
+        backup_names
+            .iter()
+            .any(|name| name.starts_with("models.json.") && name.ends_with(".bak"))
+    );
+}
+
+#[test]
+fn use_codex_profile_removes_stale_models_json_when_profile_has_none() {
+    let sandbox = Sandbox::new();
+    sandbox.write_codex_profile("openai", "model = \"gpt-5\"\n", "{}");
+    fs::write(
+        &sandbox.paths.codex_target_models_path,
+        r#"{"models":[{"slug":"stale-model"}]}"#,
+    )
+    .unwrap();
+
+    use_codex_profile(&sandbox.paths, "openai").unwrap();
+
+    assert!(!sandbox.paths.codex_target_models_path.exists());
+    let backup_names = fs::read_dir(&sandbox.paths.codex_backups_dir)
+        .unwrap()
+        .map(|entry| entry.unwrap().file_name().into_string().unwrap())
+        .collect::<Vec<_>>();
+    assert!(
+        backup_names
+            .iter()
+            .any(|name| name.starts_with("models.json.") && name.ends_with(".bak"))
+    );
+}
+
+#[test]
+fn use_codex_profile_rejects_invalid_preset_models_json() {
+    let sandbox = Sandbox::new();
+    sandbox.write_codex_profile("new", "model = \"new\"\n", "{}");
+    sandbox.write_codex_profile_models("new", "{ invalid models json");
+    fs::write(&sandbox.paths.codex_target_models_path, "{}").unwrap();
+
+    let error = use_codex_profile(&sandbox.paths, "new")
+        .unwrap_err()
+        .to_string();
+
+    assert!(error.contains("Invalid JSON") || error.contains("expected"));
+    assert_eq!(
+        fs::read_to_string(&sandbox.paths.codex_target_models_path).unwrap(),
+        "{}"
+    );
 }

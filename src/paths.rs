@@ -18,6 +18,7 @@
 //! | `codex_target_config_path` | Codex 当前生效的 `config.toml` |
 //! | `codex_target_auth_path` | Codex 当前生效的 `auth.json` |
 //! | `codex_target_models_catalog_path` | Codex 当前生效的 `models_catalog.json` |
+//! | `codex_target_models_path` | Codex 当前生效的 `models.json` |
 //!
 //! 路径解析规则（`resolve_user_path`）：
 //! 1. `~` 或 `~/...` → 相对于用户 home 目录
@@ -66,6 +67,8 @@ pub struct ResolvedPaths {
     pub codex_target_auth_path: PathBuf,
     /// Codex 当前生效的可选 `models_catalog.json` 路径。
     pub codex_target_models_catalog_path: PathBuf,
+    /// Codex 当前生效的可选 `models.json`（模型列表）路径。
+    pub codex_target_models_path: PathBuf,
     /// 自动备份最多保留多少个文件。
     pub max_backup_files: usize,
 }
@@ -91,6 +94,11 @@ impl ResolvedPaths {
         self.codex_profiles_dir
             .join(name)
             .join("models_catalog.json")
+    }
+
+    /// 根据 Codex profile 名称构造可选的 `models.json` 路径。
+    pub fn codex_models_path(&self, name: &str) -> PathBuf {
+        self.codex_profiles_dir.join(name).join("models.json")
     }
 }
 
@@ -133,6 +141,7 @@ impl PathResolver {
         let codex_target_config_path = codex_home_dir.join("config.toml");
         let codex_target_auth_path = codex_home_dir.join("auth.json");
         let codex_target_models_catalog_path = codex_home_dir.join("models_catalog.json");
+        let codex_target_models_path = codex_home_dir.join("models.json");
 
         let default_target = default_target_settings_path(&self.base_dirs);
         let target_settings_path = match app_config.target_settings_path {
@@ -158,6 +167,7 @@ impl PathResolver {
             codex_target_config_path,
             codex_target_auth_path,
             codex_target_models_catalog_path,
+            codex_target_models_path,
             max_backup_files,
         })
     }

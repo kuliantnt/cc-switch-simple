@@ -408,6 +408,7 @@ impl Sandbox {
         let codex_target_config_path = codex_target_dir.join("config.toml");
         let codex_target_auth_path = codex_target_dir.join("auth.json");
         let codex_target_models_catalog_path = codex_target_dir.join("models_catalog.json");
+        let codex_target_models_path = codex_target_dir.join("models.json");
 
         fs::create_dir_all(&profiles_dir).unwrap();
         fs::create_dir_all(&backups_dir).unwrap();
@@ -432,6 +433,7 @@ impl Sandbox {
                 codex_target_config_path,
                 codex_target_auth_path,
                 codex_target_models_catalog_path,
+                codex_target_models_path,
                 max_backup_files: 5,
             },
             _temp_dir: temp_dir,

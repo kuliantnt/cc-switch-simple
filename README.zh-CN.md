@@ -7,7 +7,7 @@
 `cc-switch` 是一个 Rust 编写的跨平台 CLI，现在同时支持两种切换模式：
 
 - Claude Code JSON profile 切换
-- Codex `config.toml` / `auth.json` 预设切换，并支持可选的 `models_catalog.json`
+- Codex `config.toml` / `auth.json` 预设切换，并支持可选的 `models.json` / `models_catalog.json`
 
 工具保持小而直接：
 
