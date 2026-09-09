@@ -91,7 +91,7 @@ Notes:
 
 - `[backups].max_files` defaults to `5`
 - `max_files` must be greater than `0`
-- it applies to both Claude and Codex backup retention; for Codex, `config.toml`, `auth.json`, and any present `models_catalog.json` each keep up to `max_files` backups
+- it applies to both Claude and Codex backup retention; for Codex, `config.toml`, `auth.json`, and any present `models.json` / `models_catalog.json` each keep up to `max_files` backups
 - relative `settings_path` values are resolved from the runtime config directory
 
 Codex files:
@@ -104,21 +104,24 @@ Codex files:
 - backup directory: `~/.cc-switch-simple/backups/codex/`
 - active config: `${CODEX_HOME:-$HOME/.codex}/config.toml`
 - active auth: `${CODEX_HOME:-$HOME/.codex}/auth.json`
+- active model list (optional): `${CODEX_HOME:-$HOME/.codex}/models.json`
 - active model catalog (optional): `${CODEX_HOME:-$HOME/.codex}/models_catalog.json`
 
-Codex mode switches the config and auth files together and handles the optional model catalog:
+Codex mode switches the config and auth files together and handles the optional model list / catalog:
 
 - the selected preset must contain both `config.toml` and `auth.json`
+- preset model list: `~/.cc-switch-simple/codex/<name>/models.json` (optional)
 - if a preset contains `models_catalog.json`, it is written during the switch; if it does not, an existing active catalog is backed up and removed
+- if a preset contains `models.json`, it is written to `${CODEX_HOME:-$HOME/.codex}/models.json` during the switch; if it does not, an existing active `models.json` is backed up and removed
 - existing target files are backed up before overwrite or removal
-- before switching away from the current Codex preset, changed `${CODEX_HOME:-$HOME/.codex}/auth.json` is saved back to that preset automatically; ChatGPT Plus login state is updated with the profile
+- before switching away from the current Codex preset, changed `${CODEX_HOME:-$HOME/.codex}/auth.json`, `models.json`, or `models_catalog.json` are saved back to that preset; ChatGPT Plus login state is updated with the profile
 - `cc-switch` and `cx-switch` do not print API keys or token values
 
 Auto-creation rules:
 
 - Claude-related commands create `~/.cc-switch-simple/`, `profiles/`, and `backups/`
 - `cc-switch cx use <name>` and `cx-switch use <name>` create `~/.cc-switch-simple/codex/`, `~/.cc-switch-simple/backups/codex/`, and `${CODEX_HOME:-$HOME/.codex}/`
-- `~/.cc-switch-simple/codex/<name>/` and its `config.toml` / `auth.json` / optional `models_catalog.json` are not generated automatically and must still be prepared manually
+- `~/.cc-switch-simple/codex/<name>/` and its `config.toml` / `auth.json` / optional `models.json` / `models_catalog.json` are not generated automatically and must still be prepared manually
 - `cc-switch cx list` and `cc-switch cx current` only read existing files and do not initialize presets
 
 ## Claude Profile Setup
