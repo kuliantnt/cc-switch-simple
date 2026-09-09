@@ -36,6 +36,9 @@ use std::io::{self, IsTerminal, Write};
 use std::path::{Path, PathBuf};
 use std::time::{SystemTime, UNIX_EPOCH};
 
+#[cfg(test)]
+use std::cell::Cell;
+
 use anyhow::{Context, Result, anyhow, bail};
 use clap::Parser;
 use serde_json::Value;
@@ -49,6 +52,9 @@ pub use codex::{
 };
 pub use config::{AppConfig, ConfigFile};
 pub use paths::{PathResolver, ResolvedPaths};
+
+#[cfg(test)]
+mod first_capture_tests;
 
 /// 解析 CLI 参数，解析路径，分发到对应子命令处理函数。
 pub fn run() -> Result<()> {
@@ -573,7 +579,25 @@ fn sync_back_current_profile(paths: &ResolvedPaths) -> Result<()> {
     Ok(())
 }
 
+#[cfg(test)]
+thread_local! {
+    static SYNC_BACK_OVERRIDE: Cell<Option<bool>> = const { Cell::new(None) };
+}
+
+/// 仅限 crate 内部单测使用的钩子：强制指定 sync-back 询问的结果。
+#[cfg(test)]
+pub(crate) fn set_sync_back_override(value: Option<bool>) {
+    SYNC_BACK_OVERRIDE.with(|cell| cell.set(value));
+}
+
 pub(crate) fn should_sync_back(prompt: &str) -> Result<bool> {
+    #[cfg(test)]
+    {
+        if let Some(forced) = SYNC_BACK_OVERRIDE.with(Cell::get) {
+            return Ok(forced);
+        }
+    }
+
     if !io::stdin().is_terminal() {
         return Ok(true);
     }

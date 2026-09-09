@@ -8,6 +8,69 @@ use cc_switch::{
 };
 use tempfile::TempDir;
 
+struct Sandbox {
+    _temp_dir: TempDir,
+    paths: ResolvedPaths,
+}
+
+impl Sandbox {
+    fn new() -> Self {
+        let temp_dir = TempDir::new().unwrap();
+        let config_dir = temp_dir.path().join(".cc-switch-simple");
+        let profiles_dir = config_dir.join("profiles");
+        let backups_dir = config_dir.join("backups");
+        let codex_root = temp_dir.path().join(".cc-switch-simple");
+        let codex_profiles_dir = codex_root.join("codex");
+        let codex_backups_dir = codex_root.join("backups").join("codex");
+        let target_settings_path = temp_dir.path().join(".claude").join("settings.json");
+        let codex_target_dir = temp_dir.path().join(".codex");
+        let codex_target_config_path = codex_target_dir.join("config.toml");
+        let codex_target_auth_path = codex_target_dir.join("auth.json");
+        let codex_target_models_catalog_path = codex_target_dir.join("models_catalog.json");
+        let codex_target_models_path = codex_target_dir.join("models.json");
+
+        fs::create_dir_all(&profiles_dir).unwrap();
+        fs::create_dir_all(&backups_dir).unwrap();
+        fs::create_dir_all(&codex_profiles_dir).unwrap();
+        fs::create_dir_all(&codex_backups_dir).unwrap();
+        fs::create_dir_all(target_settings_path.parent().unwrap()).unwrap();
+        fs::create_dir_all(&codex_target_dir).unwrap();
+
+        Self {
+            paths: ResolvedPaths {
+                config_dir: config_dir.clone(),
+                config_file_path: config_dir.join("config.toml"),
+                profiles_dir,
+                current_path: config_dir.join("current"),
+                before_path: config_dir.join("before"),
+                backups_dir,
+                target_settings_path,
+                codex_profiles_dir: codex_profiles_dir.clone(),
+                codex_current_path: codex_profiles_dir.join("current"),
+                codex_before_path: codex_profiles_dir.join("before"),
+                codex_backups_dir,
+                codex_target_config_path,
+                codex_target_auth_path,
+                codex_target_models_catalog_path,
+                codex_target_models_path,
+                max_backup_files: 5,
+            },
+            _temp_dir: temp_dir,
+        }
+    }
+
+    fn write_codex_profile(&self, name: &str, content: &str, auth: &str) {
+        let profile_dir = self.paths.codex_profiles_dir.join(name);
+        fs::create_dir_all(&profile_dir).unwrap();
+        fs::write(profile_dir.join("config.toml"), content).unwrap();
+        fs::write(profile_dir.join("auth.json"), auth).unwrap();
+    }
+
+    fn write_codex_profile_models(&self, name: &str, content: &str) {
+        fs::write(self.paths.codex_models_path(name), content).unwrap();
+    }
+}
+
 #[test]
 fn bundled_deepseek_preset_is_complete_and_redacted() {
     let preset_dir = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("codex/deepseek");
@@ -197,7 +260,7 @@ fn use_codex_profile_removes_stale_models_catalog_when_profile_has_none() {
 }
 
 #[test]
-fn use_codex_profile_replaces_invalid_active_catalog_when_target_has_none() {
+fn use_codex_profile_rejects_invalid_active_catalog_without_overwriting_profile() {
     let sandbox = Sandbox::new();
     sandbox.write_codex_profile("old", "model = \"old\"\n", "{\"token\":\"old\"}");
     sandbox.write_codex_profile("new", "model = \"new\"\n", "{\"token\":\"new\"}");
@@ -211,33 +274,29 @@ fn use_codex_profile_replaces_invalid_active_catalog_when_target_has_none() {
     )
     .unwrap();
 
-    use_codex_profile(&sandbox.paths, "new").unwrap();
+    let error = use_codex_profile(&sandbox.paths, "new")
+        .unwrap_err()
+        .to_string();
 
+    assert!(error.contains("Invalid JSON") || error.contains("expected"));
+    assert_eq!(
+        fs::read(&sandbox.paths.codex_target_models_catalog_path).unwrap(),
+        invalid_catalog
+    );
+    assert!(!sandbox.paths.codex_models_catalog_path("old").exists());
+    assert!(!sandbox.paths.codex_models_catalog_path("new").exists());
+    assert_eq!(
+        read_codex_current_name(&sandbox.paths).unwrap().as_deref(),
+        Some("old")
+    );
     assert_eq!(
         fs::read_to_string(&sandbox.paths.codex_target_config_path).unwrap(),
-        "model = \"new\"\n"
+        "model = \"old\"\n"
     );
     assert_eq!(
         fs::read_to_string(&sandbox.paths.codex_target_auth_path).unwrap(),
-        "{\"token\":\"new\"}"
+        "{\"token\":\"old\"}"
     );
-    assert!(!sandbox.paths.codex_target_models_catalog_path.exists());
-    assert_eq!(
-        read_codex_current_name(&sandbox.paths).unwrap().as_deref(),
-        Some("new")
-    );
-
-    let catalog_backup = fs::read_dir(&sandbox.paths.codex_backups_dir)
-        .unwrap()
-        .map(|entry| entry.unwrap())
-        .find(|entry| {
-            entry.file_name().to_str().is_some_and(|name| {
-                name.starts_with("models_catalog.json.") && name.ends_with(".bak")
-            })
-        })
-        .expect("model catalog backup should exist")
-        .path();
-    assert_eq!(fs::read(catalog_backup).unwrap(), invalid_catalog);
 }
 
 #[test]
@@ -753,69 +812,6 @@ fn use_before_codex_profile_with_incomplete_history_profile_skips_without_error(
     );
     assert_eq!(read_codex_before_name(&sandbox.paths).unwrap(), None);
     assert!(!sandbox.paths.codex_before_path.is_file());
-}
-
-struct Sandbox {
-    _temp_dir: TempDir,
-    paths: ResolvedPaths,
-}
-
-impl Sandbox {
-    fn new() -> Self {
-        let temp_dir = TempDir::new().unwrap();
-        let config_dir = temp_dir.path().join(".cc-switch-simple");
-        let profiles_dir = config_dir.join("profiles");
-        let backups_dir = config_dir.join("backups");
-        let codex_root = temp_dir.path().join(".cc-switch-simple");
-        let codex_profiles_dir = codex_root.join("codex");
-        let codex_backups_dir = codex_root.join("backups").join("codex");
-        let target_settings_path = temp_dir.path().join(".claude").join("settings.json");
-        let codex_target_dir = temp_dir.path().join(".codex");
-        let codex_target_config_path = codex_target_dir.join("config.toml");
-        let codex_target_auth_path = codex_target_dir.join("auth.json");
-        let codex_target_models_catalog_path = codex_target_dir.join("models_catalog.json");
-        let codex_target_models_path = codex_target_dir.join("models.json");
-
-        fs::create_dir_all(&profiles_dir).unwrap();
-        fs::create_dir_all(&backups_dir).unwrap();
-        fs::create_dir_all(&codex_profiles_dir).unwrap();
-        fs::create_dir_all(&codex_backups_dir).unwrap();
-        fs::create_dir_all(target_settings_path.parent().unwrap()).unwrap();
-        fs::create_dir_all(&codex_target_dir).unwrap();
-
-        Self {
-            paths: ResolvedPaths {
-                config_dir: config_dir.clone(),
-                config_file_path: config_dir.join("config.toml"),
-                profiles_dir,
-                current_path: config_dir.join("current"),
-                before_path: config_dir.join("before"),
-                backups_dir,
-                target_settings_path,
-                codex_profiles_dir: codex_profiles_dir.clone(),
-                codex_current_path: codex_profiles_dir.join("current"),
-                codex_before_path: codex_profiles_dir.join("before"),
-                codex_backups_dir,
-                codex_target_config_path,
-                codex_target_auth_path,
-                codex_target_models_catalog_path,
-                codex_target_models_path,
-                max_backup_files: 5,
-            },
-            _temp_dir: temp_dir,
-        }
-    }
-
-    fn write_codex_profile(&self, name: &str, content: &str, auth: &str) {
-        let profile_dir = self.paths.codex_profiles_dir.join(name);
-        fs::create_dir_all(&profile_dir).unwrap();
-        fs::write(profile_dir.join("config.toml"), content).unwrap();
-        fs::write(profile_dir.join("auth.json"), auth).unwrap();
-    }
-
-    fn write_codex_profile_models(&self, name: &str, content: &str) {
-        fs::write(self.paths.codex_models_path(name), content).unwrap();
-    }
 }
 
 #[test]
