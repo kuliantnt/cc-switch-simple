@@ -1,11 +1,17 @@
+//! 首次收纳 optional Codex 模型 JSON 的内部单测。
+//!
+//! 因依赖仅测试可见的 `set_sync_back_override` 钩子，
+//! 本模块以 `#[cfg(test)]` 编译，不进入正式 library API。
+
 use std::fs;
 
-use cc_switch::{read_codex_current_name, use_codex_profile};
 use tempfile::TempDir;
+
+use crate::{ResolvedPaths, read_codex_current_name, set_sync_back_override, use_codex_profile};
 
 struct Sandbox {
     _temp_dir: TempDir,
-    paths: cc_switch::ResolvedPaths,
+    paths: ResolvedPaths,
 }
 
 impl Sandbox {
@@ -21,7 +27,7 @@ impl Sandbox {
         fs::create_dir_all(&codex_target_dir).unwrap();
 
         Self {
-            paths: cc_switch::ResolvedPaths {
+            paths: ResolvedPaths {
                 config_dir: config_dir.clone(),
                 config_file_path: config_dir.join("config.toml"),
                 profiles_dir: config_dir.join("profiles"),
@@ -71,18 +77,18 @@ fn first_capture_models_json_saved_then_restored_on_switch_back() {
     fs::write(&sandbox.paths.codex_target_config_path, "model = \"old\"\n").unwrap();
     fs::write(&sandbox.paths.codex_target_auth_path, "{\"token\":\"old\"}").unwrap();
 
-    cc_switch::set_sync_back_override(Some(true));
+    set_sync_back_override(Some(true));
     use_codex_profile(&sandbox.paths, "new").unwrap();
-    cc_switch::set_sync_back_override(None);
+    set_sync_back_override(None);
 
     assert_eq!(
         fs::read_to_string(sandbox.paths.codex_models_path("old")).unwrap(),
         active
     );
 
-    cc_switch::set_sync_back_override(Some(false));
+    set_sync_back_override(Some(false));
     use_codex_profile(&sandbox.paths, "old").unwrap();
-    cc_switch::set_sync_back_override(None);
+    set_sync_back_override(None);
 
     assert_eq!(
         fs::read_to_string(&sandbox.paths.codex_target_models_path).unwrap(),
@@ -101,18 +107,18 @@ fn first_capture_models_catalog_saved_then_restored_on_switch_back() {
     fs::write(&sandbox.paths.codex_target_config_path, "model = \"old\"\n").unwrap();
     fs::write(&sandbox.paths.codex_target_auth_path, "{\"token\":\"old\"}").unwrap();
 
-    cc_switch::set_sync_back_override(Some(true));
+    set_sync_back_override(Some(true));
     use_codex_profile(&sandbox.paths, "new").unwrap();
-    cc_switch::set_sync_back_override(None);
+    set_sync_back_override(None);
 
     assert_eq!(
         fs::read_to_string(sandbox.paths.codex_models_catalog_path("old")).unwrap(),
         active
     );
 
-    cc_switch::set_sync_back_override(Some(false));
+    set_sync_back_override(Some(false));
     use_codex_profile(&sandbox.paths, "old").unwrap();
-    cc_switch::set_sync_back_override(None);
+    set_sync_back_override(None);
 
     assert_eq!(
         fs::read_to_string(&sandbox.paths.codex_target_models_catalog_path).unwrap(),
@@ -131,9 +137,9 @@ fn first_capture_declined_keeps_profile_empty_and_switch_completes() {
     fs::write(&sandbox.paths.codex_target_config_path, "model = \"old\"\n").unwrap();
     fs::write(&sandbox.paths.codex_target_auth_path, "{\"token\":\"old\"}").unwrap();
 
-    cc_switch::set_sync_back_override(Some(false));
+    set_sync_back_override(Some(false));
     use_codex_profile(&sandbox.paths, "new").unwrap();
-    cc_switch::set_sync_back_override(None);
+    set_sync_back_override(None);
 
     assert!(!sandbox.paths.codex_models_path("old").exists());
     assert_eq!(
