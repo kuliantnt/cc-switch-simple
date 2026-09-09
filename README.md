@@ -7,7 +7,7 @@
 `cc-switch` 是一个 Rust 编写的跨平台 CLI，现在同时支持两种切换模式：
 
 - Claude Code JSON profile 切换
-- Codex `config.toml` / `auth.json` 预设切换，并支持可选的 `models_catalog.json`
+- Codex `config.toml` / `auth.json` 预设切换，并支持可选的 `models.json` / `models_catalog.json`
 
 工具保持小而直接：
 
@@ -91,7 +91,7 @@ max_files = 5
 
 - `[backups].max_files` 默认是 `5`
 - `max_files` 必须大于 `0`
-- 同时作用于 Claude 和 Codex 的自动备份保留数量；对于 Codex，会对 `config.toml`、`auth.json` 和存在的 `models_catalog.json` 分别保留 `max_files` 个备份
+- 同时作用于 Claude 和 Codex 的自动备份保留数量；对于 Codex，会对 `config.toml`、`auth.json` 和存在的 `models.json` / `models_catalog.json` 分别保留 `max_files` 个备份
 - 如果 `settings_path` 是相对路径，会相对 `config.toml` 所在目录解析
 
 Codex 相关文件：
@@ -104,21 +104,24 @@ Codex 相关文件：
 - 备份目录：`~/.cc-switch-simple/backups/codex/`
 - 当前生效配置：`${CODEX_HOME:-$HOME/.codex}/config.toml`
 - 当前生效认证：`${CODEX_HOME:-$HOME/.codex}/auth.json`
+- 当前生效模型列表（可选）：`${CODEX_HOME:-$HOME/.codex}/models.json`
 - 当前生效模型目录（可选）：`${CODEX_HOME:-$HOME/.codex}/models_catalog.json`
 
-Codex 模式会一起切换配置和认证这两个文件，并按预设处理可选模型目录：
+Codex 模式会一起切换配置和认证这两个文件，并按预设处理可选的模型列表 / 模型目录：
 
 - 选中的预设目录必须同时包含 `config.toml` 和 `auth.json`
+- 预设模型列表：`~/.cc-switch-simple/codex/<name>/models.json`（可选）
 - 如果预设包含 `models_catalog.json`，切换时会一并写入；如果不包含，切换时会先备份并删除活动目录中的旧文件
+- 如果预设包含 `models.json`，切换时会一并写入 `${CODEX_HOME:-$HOME/.codex}/models.json`；如果不包含，切换时会先备份并删除活动目录中的旧 `models.json`
 - 覆盖或删除前会分别备份当前目标文件
-- 切换离开当前 Codex 预设前，如果 `${CODEX_HOME:-$HOME/.codex}/auth.json` 有变化，会自动保存回当前预设；ChatGPT Plus 登录状态会随 profile 自动更新
+- 切换离开当前 Codex 预设前，如果 `${CODEX_HOME:-$HOME/.codex}/auth.json`、`models.json` 或 `models_catalog.json` 有变化，会提示保存回当前预设；ChatGPT Plus 登录状态会随 profile 自动更新
 - `cc-switch` / `cx-switch` 不会输出 API Key 或 token 内容
 
 自动创建规则：
 
 - Claude 相关命令会自动创建 `~/.cc-switch-simple/`、`profiles/`、`backups/`
 - `cc-switch cx use <name>` 和 `cx-switch use <name>` 会自动创建 `~/.cc-switch-simple/codex/`、`~/.cc-switch-simple/backups/codex/`，以及 `${CODEX_HOME:-$HOME/.codex}/`
-- `~/.cc-switch-simple/codex/<name>/` 和其中的 `config.toml`、`auth.json`、可选 `models_catalog.json` 不会自动生成，仍需手动准备
+- `~/.cc-switch-simple/codex/<name>/` 和其中的 `config.toml`、`auth.json`、可选 `models.json` / `models_catalog.json` 不会自动生成，仍需手动准备
 - `cc-switch cx list` 和 `cc-switch cx current` 只读取现有文件，不会初始化预设目录
 
 ## Claude Profile 初始化

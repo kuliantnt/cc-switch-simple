@@ -13,7 +13,7 @@ use crate::{
 
 /// 一个 Codex profile 条目：名称 + `config.toml` 路径。
 ///
-/// 同目录下的 `auth.json` 必须存在，`models_catalog.json` 可选。
+/// 同目录下的 `auth.json` 必须存在，`models.json` / `models_catalog.json` 可选。
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct CodexProfileEntry {
     /// Profile 名称（目录名）。
@@ -71,6 +71,11 @@ pub fn show_codex_current(paths: &ResolvedPaths) -> Result<()> {
         "Target model catalog status",
         &paths.codex_target_models_catalog_path,
     );
+    println!(
+        "Target model list: {}",
+        paths.codex_target_models_path.display()
+    );
+    print_target_status("Target model list status", &paths.codex_target_models_path);
 
     Ok(())
 }
@@ -95,12 +100,14 @@ pub fn use_codex_profile(paths: &ResolvedPaths, name: &str) -> Result<()> {
 
     let profile_models_catalog_path =
         optional_models_catalog_path(paths, name)?.map(|path| path.to_path_buf());
+    let profile_models_path = optional_models_path(paths, name)?.map(|path| path.to_path_buf());
     switch_codex_profile(
         paths,
         name,
         &profile_config_path,
         &profile_auth_path,
         profile_models_catalog_path.as_deref(),
+        profile_models_path.as_deref(),
     )
 }
 
@@ -137,12 +144,14 @@ pub fn use_next_codex_profile(paths: &ResolvedPaths) -> Result<()> {
 
     let next_models_catalog_path =
         optional_models_catalog_path(paths, &next.name)?.map(|path| path.to_path_buf());
+    let next_models_path = optional_models_path(paths, &next.name)?.map(|path| path.to_path_buf());
     switch_codex_profile(
         paths,
         &next.name,
         &next.path,
         &next_auth_path,
         next_models_catalog_path.as_deref(),
+        next_models_path.as_deref(),
     )
 }
 
@@ -158,7 +167,7 @@ pub fn use_before_codex_profile(paths: &ResolvedPaths) -> Result<()> {
 }
 
 /// 扫描 `~/.cc-switch-simple/codex/<name>/config.toml` 和 `auth.json`。
-/// `models_catalog.json` 是可选文件，不影响 profile 被列出。
+/// `models.json` / `models_catalog.json` 是可选文件，不影响 profile 被列出。
 pub fn collect_codex_profiles(paths: &ResolvedPaths) -> Result<Vec<CodexProfileEntry>> {
     if !paths.codex_profiles_dir.is_dir() {
         return Ok(Vec::new());
@@ -237,6 +246,7 @@ fn switch_codex_profile(
     profile_config_path: &Path,
     profile_auth_path: &Path,
     profile_models_catalog_path: Option<&Path>,
+    profile_models_path: Option<&Path>,
 ) -> Result<()> {
     ensure_codex_runtime_dirs(paths)?;
 
@@ -246,6 +256,7 @@ fn switch_codex_profile(
         &paths.codex_target_models_catalog_path,
         "Codex target model catalog",
     )?;
+    ensure_target_file_slot(&paths.codex_target_models_path, "Codex target model list")?;
 
     validate_target_auth_json(paths)?;
 
@@ -256,6 +267,15 @@ fn switch_codex_profile(
     serde_json::from_slice::<serde_json::Value>(&auth_content)
         .with_context(|| format!("Invalid JSON: {}", profile_auth_path.display()))?;
     let models_catalog_content = profile_models_catalog_path
+        .map(|path| {
+            let content =
+                fs::read(path).with_context(|| format!("Failed to read {}", path.display()))?;
+            serde_json::from_slice::<serde_json::Value>(&content)
+                .with_context(|| format!("Invalid JSON: {}", path.display()))?;
+            Ok::<_, anyhow::Error>(content)
+        })
+        .transpose()?;
+    let models_content = profile_models_path
         .map(|path| {
             let content =
                 fs::read(path).with_context(|| format!("Failed to read {}", path.display()))?;
@@ -288,6 +308,11 @@ fn switch_codex_profile(
         println!("Model catalog backup: {}", backup_path.display());
     }
 
+    if paths.codex_target_models_path.is_file() {
+        let backup_path = create_codex_backup(paths, &paths.codex_target_models_path, now)?;
+        println!("Model list backup: {}", backup_path.display());
+    }
+
     write_bytes_to_target(&config_content, &paths.codex_target_config_path)?;
     write_bytes_to_target(&auth_content, &paths.codex_target_auth_path)?;
     match (models_catalog_content, profile_models_catalog_path) {
@@ -312,6 +337,26 @@ fn switch_codex_profile(
         }
         (None, None) => {}
         _ => unreachable!("model catalog content and path must be present together"),
+    }
+    match (models_content, profile_models_path) {
+        (Some(content), Some(_)) => {
+            write_bytes_to_target(&content, &paths.codex_target_models_path)?;
+            println!("Updated: {}", paths.codex_target_models_path.display());
+        }
+        (None, None) if paths.codex_target_models_path.is_file() => {
+            fs::remove_file(&paths.codex_target_models_path).with_context(|| {
+                format!(
+                    "Failed to remove {}",
+                    paths.codex_target_models_path.display()
+                )
+            })?;
+            println!(
+                "Removed stale Codex model list: {}",
+                paths.codex_target_models_path.display()
+            );
+        }
+        (None, None) => {}
+        _ => unreachable!("model list content and path must be present together"),
     }
     write_bytes_to_target(name.as_bytes(), &paths.codex_current_path)?;
     record_codex_before_name(paths, previous_profile.as_deref(), name)?;
@@ -352,6 +397,15 @@ fn sync_back_current_codex_profile(paths: &ResolvedPaths) -> Result<()> {
     } else {
         None
     };
+    let models_change = if paths.codex_models_path(&name).is_file() {
+        pending_sync_file(
+            &paths.codex_target_models_path,
+            &paths.codex_models_path(&name),
+            CodexSyncKind::Models,
+        )?
+    } else {
+        None
+    };
 
     if let Some(change) = auth_change {
         write_bytes_to_target(&change.content, &change.profile_path).with_context(|| {
@@ -378,6 +432,16 @@ fn sync_back_current_codex_profile(paths: &ResolvedPaths) -> Result<()> {
         write_bytes_to_target(&change.content, &change.profile_path)?;
         println!("Synced current Codex profile file: {}", change.file_name);
         println!("Synced current Codex model catalog: {}", name);
+    }
+
+    if let Some(change) = models_change
+        && should_sync_back(&format!(
+            "Detected changes in current Codex model list \"{name}\". Sync back before switching? [y/N] "
+        ))?
+    {
+        write_bytes_to_target(&change.content, &change.profile_path)?;
+        println!("Synced current Codex profile file: {}", change.file_name);
+        println!("Synced current Codex model list: {}", name);
     }
 
     Ok(())
@@ -417,6 +481,15 @@ fn optional_models_catalog_path(paths: &ResolvedPaths, name: &str) -> Result<Opt
             "Codex profile model catalog is not a file: {}",
             path.display()
         );
+    }
+
+    Ok(path.is_file().then_some(path))
+}
+
+fn optional_models_path(paths: &ResolvedPaths, name: &str) -> Result<Option<PathBuf>> {
+    let path = paths.codex_models_path(name);
+    if path.exists() && !path.is_file() {
+        bail!("Codex profile model list is not a file: {}", path.display());
     }
 
     Ok(path.is_file().then_some(path))
@@ -467,10 +540,11 @@ enum CodexSyncKind {
     Config,
     Auth,
     ModelsCatalog,
+    Models,
 }
 
 struct PendingCodexSync {
-    file_name: &'static str,
+    file_name: String,
     profile_path: PathBuf,
     content: Vec<u8>,
 }
@@ -486,14 +560,14 @@ fn pending_sync_file(
 
     let target_content = fs::read(target_path)
         .with_context(|| format!("Failed to read {}", target_path.display()))?;
-    if matches!(kind, CodexSyncKind::Auth | CodexSyncKind::ModelsCatalog) {
+    if !matches!(kind, CodexSyncKind::Config) {
         serde_json::from_slice::<serde_json::Value>(&target_content)
             .with_context(|| format!("Invalid JSON: {}", target_path.display()))?;
     }
 
     let profile_content = fs::read(profile_path)
         .with_context(|| format!("Failed to read {}", profile_path.display()))?;
-    if matches!(kind, CodexSyncKind::Auth | CodexSyncKind::ModelsCatalog) {
+    if !matches!(kind, CodexSyncKind::Config) {
         serde_json::from_slice::<serde_json::Value>(&profile_content)
             .with_context(|| format!("Invalid JSON: {}", profile_path.display()))?;
     }
@@ -501,12 +575,18 @@ fn pending_sync_file(
         return Ok(None);
     }
 
+    let file_name = profile_path
+        .file_name()
+        .map(|name| name.to_string_lossy().into_owned())
+        .unwrap_or_else(|| match kind {
+            CodexSyncKind::Config => "config.toml".to_string(),
+            CodexSyncKind::Auth => "auth.json".to_string(),
+            CodexSyncKind::ModelsCatalog => "models_catalog.json".to_string(),
+            CodexSyncKind::Models => "models.json".to_string(),
+        });
+
     Ok(Some(PendingCodexSync {
-        file_name: match kind {
-            CodexSyncKind::Config => "config.toml",
-            CodexSyncKind::Auth => "auth.json",
-            CodexSyncKind::ModelsCatalog => "models_catalog.json",
-        },
+        file_name,
         profile_path: profile_path.to_path_buf(),
         content: target_content,
     }))
@@ -521,6 +601,7 @@ fn ensure_codex_runtime_dirs(paths: &ResolvedPaths) -> Result<()> {
         &paths.codex_target_config_path,
         &paths.codex_target_auth_path,
         &paths.codex_target_models_catalog_path,
+        &paths.codex_target_models_path,
     ] {
         let target_parent = path.parent().ok_or_else(|| {
             anyhow!(
