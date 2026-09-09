@@ -48,7 +48,7 @@ pub enum Commands {
     Next,
     /// 切换到最近一次成功切换前的 profile。
     Before,
-    /// 切换 Codex 预设（`config.toml` + `auth.json`，可选 `models_catalog.json`）。
+    /// 切换 Codex 预设（`config.toml` + `auth.json`，可选 `models.json` / `models_catalog.json`）。
     Cx {
         #[command(subcommand)]
         command: CodexCommands,
