@@ -30,6 +30,7 @@ mod codex;
 mod config;
 pub mod paths;
 
+use std::cell::Cell;
 use std::fmt::Write as _;
 use std::fs;
 use std::io::{self, IsTerminal, Write};
@@ -573,7 +574,21 @@ fn sync_back_current_profile(paths: &ResolvedPaths) -> Result<()> {
     Ok(())
 }
 
+thread_local! {
+    static SYNC_BACK_OVERRIDE: Cell<Option<bool>> = const { Cell::new(None) };
+}
+
+/// 测试钩子：强制指定 sync-back 询问的结果，绕过交互式输入。
+#[doc(hidden)]
+pub fn set_sync_back_override(value: Option<bool>) {
+    SYNC_BACK_OVERRIDE.with(|cell| cell.set(value));
+}
+
 pub(crate) fn should_sync_back(prompt: &str) -> Result<bool> {
+    if let Some(forced) = SYNC_BACK_OVERRIDE.with(Cell::get) {
+        return Ok(forced);
+    }
+
     if !io::stdin().is_terminal() {
         return Ok(true);
     }

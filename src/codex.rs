@@ -388,24 +388,16 @@ fn sync_back_current_codex_profile(paths: &ResolvedPaths) -> Result<()> {
         &profile_auth_path,
         CodexSyncKind::Auth,
     )?;
-    let models_catalog_change = if paths.codex_models_catalog_path(&name).is_file() {
-        pending_sync_file(
-            &paths.codex_target_models_catalog_path,
-            &paths.codex_models_catalog_path(&name),
-            CodexSyncKind::ModelsCatalog,
-        )?
-    } else {
-        None
-    };
-    let models_change = if paths.codex_models_path(&name).is_file() {
-        pending_sync_file(
-            &paths.codex_target_models_path,
-            &paths.codex_models_path(&name),
-            CodexSyncKind::Models,
-        )?
-    } else {
-        None
-    };
+    let models_catalog_change = pending_optional_sync_file(
+        &paths.codex_target_models_catalog_path,
+        &paths.codex_models_catalog_path(&name),
+        CodexSyncKind::ModelsCatalog,
+    )?;
+    let models_change = pending_optional_sync_file(
+        &paths.codex_target_models_path,
+        &paths.codex_models_path(&name),
+        CodexSyncKind::Models,
+    )?;
 
     if let Some(change) = auth_change {
         write_bytes_to_target(&change.content, &change.profile_path).with_context(|| {
@@ -424,24 +416,38 @@ fn sync_back_current_codex_profile(paths: &ResolvedPaths) -> Result<()> {
         println!("Synced current Codex profile: {}", name);
     }
 
-    if let Some(change) = models_catalog_change
-        && should_sync_back(&format!(
-            "Detected changes in current Codex model catalog \"{name}\". Sync back before switching? [y/N] "
-        ))?
-    {
-        write_bytes_to_target(&change.content, &change.profile_path)?;
-        println!("Synced current Codex profile file: {}", change.file_name);
-        println!("Synced current Codex model catalog: {}", name);
+    if let Some(change) = models_catalog_change {
+        let prompt = if change.first_capture {
+            format!(
+                "Found active Codex model catalog not yet saved to profile \"{name}\". Save it before switching? [y/N] "
+            )
+        } else {
+            format!(
+                "Detected changes in current Codex model catalog \"{name}\". Sync back before switching? [y/N] "
+            )
+        };
+        if should_sync_back(&prompt)? {
+            write_bytes_to_target(&change.content, &change.profile_path)?;
+            println!("Synced current Codex profile file: {}", change.file_name);
+            println!("Synced current Codex model catalog: {}", name);
+        }
     }
 
-    if let Some(change) = models_change
-        && should_sync_back(&format!(
-            "Detected changes in current Codex model list \"{name}\". Sync back before switching? [y/N] "
-        ))?
-    {
-        write_bytes_to_target(&change.content, &change.profile_path)?;
-        println!("Synced current Codex profile file: {}", change.file_name);
-        println!("Synced current Codex model list: {}", name);
+    if let Some(change) = models_change {
+        let prompt = if change.first_capture {
+            format!(
+                "Found active Codex model list not yet saved to profile \"{name}\". Save it before switching? [y/N] "
+            )
+        } else {
+            format!(
+                "Detected changes in current Codex model list \"{name}\". Sync back before switching? [y/N] "
+            )
+        };
+        if should_sync_back(&prompt)? {
+            write_bytes_to_target(&change.content, &change.profile_path)?;
+            println!("Synced current Codex profile file: {}", change.file_name);
+            println!("Synced current Codex model list: {}", name);
+        }
     }
 
     Ok(())
@@ -547,6 +553,7 @@ struct PendingCodexSync {
     file_name: String,
     profile_path: PathBuf,
     content: Vec<u8>,
+    first_capture: bool,
 }
 
 fn pending_sync_file(
@@ -589,7 +596,45 @@ fn pending_sync_file(
         file_name,
         profile_path: profile_path.to_path_buf(),
         content: target_content,
+        first_capture: false,
     }))
+}
+
+/// 可选模型 JSON 的回写检测：profile 文件不存在但活动文件存在时视为首次捕获。
+fn pending_optional_sync_file(
+    target_path: &Path,
+    profile_path: &Path,
+    kind: CodexSyncKind,
+) -> Result<Option<PendingCodexSync>> {
+    if !target_path.is_file() {
+        return Ok(None);
+    }
+
+    if !profile_path.is_file() {
+        let target_content = fs::read(target_path)
+            .with_context(|| format!("Failed to read {}", target_path.display()))?;
+        serde_json::from_slice::<serde_json::Value>(&target_content)
+            .with_context(|| format!("Invalid JSON: {}", target_path.display()))?;
+
+        let file_name = profile_path
+            .file_name()
+            .map(|name| name.to_string_lossy().into_owned())
+            .unwrap_or_else(|| match kind {
+                CodexSyncKind::Config => "config.toml".to_string(),
+                CodexSyncKind::Auth => "auth.json".to_string(),
+                CodexSyncKind::ModelsCatalog => "models_catalog.json".to_string(),
+                CodexSyncKind::Models => "models.json".to_string(),
+            });
+
+        return Ok(Some(PendingCodexSync {
+            file_name,
+            profile_path: profile_path.to_path_buf(),
+            content: target_content,
+            first_capture: true,
+        }));
+    }
+
+    pending_sync_file(target_path, profile_path, kind)
 }
 
 fn ensure_codex_runtime_dirs(paths: &ResolvedPaths) -> Result<()> {
